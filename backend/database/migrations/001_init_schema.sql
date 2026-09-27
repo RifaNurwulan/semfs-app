@@ -1,34 +1,38 @@
-
+-- Pastikan ekstensi TimescaleDB aktif (harusnya sudah, tapi jaga-jaga)
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ------------------------------------------------------------
 -- 1. USERS -- Login multi-role (F-10)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
-    id            SERIAL PRIMARY KEY,
-    username      VARCHAR(50) UNIQUE NOT NULL,
-    email         VARCHAR(100) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,   -- simpan hash, JANGAN plain text
-    role          VARCHAR(20) NOT NULL DEFAULT 'viewer'
-                  CHECK (role IN ('admin', 'operator', 'viewer')),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                   SERIAL PRIMARY KEY,
+    username             VARCHAR(50) UNIQUE NOT NULL,
+    email                VARCHAR(100) UNIQUE NOT NULL,
+    password_hash        VARCHAR(255) NOT NULL,   -- simpan hash, JANGAN plain text
+    role                 VARCHAR(20) NOT NULL DEFAULT 'viewer'
+                         CHECK (role IN ('admin', 'operator', 'viewer')),
+    reset_token          VARCHAR(255),             -- token untuk use case Reset Password
+    reset_token_expiry   TIMESTAMPTZ,               -- masa berlaku token (mis. 1 jam)
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ------------------------------------------------------------
 -- 2. POWER_METERS -- Data device Modbus (F-01, F-02)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS power_meters (
-    id            SERIAL PRIMARY KEY,
-    device_id     VARCHAR(50) UNIQUE NOT NULL,
-    device_name   VARCHAR(100),
-    ip_address    VARCHAR(45) NOT NULL,     -- cukup untuk IPv4 & IPv6
-    port          INTEGER NOT NULL DEFAULT 502,  -- port default Modbus TCP
-    location      VARCHAR(150),
-    status        VARCHAR(20) NOT NULL DEFAULT 'offline'
-                  CHECK (status IN ('online', 'offline', 'error')),
-    last_seen_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id               SERIAL PRIMARY KEY,
+    device_id        VARCHAR(50) UNIQUE NOT NULL,
+    device_name      VARCHAR(100),
+    ip_address       VARCHAR(45) NOT NULL,     -- cukup untuk IPv4 & IPv6
+    port             INTEGER NOT NULL DEFAULT 502,  -- port default Modbus TCP
+    virtual_id       INTEGER,                  -- Modbus Unit/Slave ID, use case Maintenance
+    register_address INTEGER,                  -- alamat register Modbus yang dibaca, use case Maintenance
+    location         VARCHAR(150),
+    status           VARCHAR(20) NOT NULL DEFAULT 'offline'
+                     CHECK (status IN ('online', 'offline', 'error')),
+    last_seen_at     TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ------------------------------------------------------------
