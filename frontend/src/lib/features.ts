@@ -1,0 +1,117 @@
+import { Activity, FileText, Settings, TrendingUp, Wrench, type LucideIcon } from 'lucide-react'
+import type { Role } from './api'
+
+export type FeatureKey = 'monitoring' | 'forecasting' | 'pengaturan' | 'ekspor' | 'maintenance'
+
+export interface Feature {
+  key: FeatureKey
+  path: string
+  title: string
+  /** Teks di kartu Dashboard */
+  description: string
+  /** Teks di header halaman */
+  subtitle: string
+  icon: LucideIcon
+  size: 'large' | 'small'
+  gradient: string
+  headerIconBg: string
+  /** Role yang boleh membuka halaman ini (RBAC, F-10) */
+  roles: Role[]
+  /** Info roadmap, dipakai halaman placeholder */
+  owner: string
+  task: string
+  schedule: string
+}
+
+// Urutan = urutan kartu di Dashboard. Untuk mengubah hak akses cukup ubah `roles`.
+export const FEATURES: Feature[] = [
+  {
+    key: 'monitoring',
+    path: '/monitoring',
+    title: 'Monitoring Energy',
+    description: 'Pantau konsumsi energi real-time dengan visualisasi interaktif',
+    subtitle: 'Pantau konsumsi energi secara real-time',
+    icon: Activity,
+    size: 'large',
+    gradient: 'from-emerald-500 to-teal-600',
+    headerIconBg: 'bg-emerald-600',
+    roles: ['admin', 'operator', 'viewer'],
+    owner: '',
+    task: '',
+    schedule: '',
+  },
+  {
+    key: 'forecasting',
+    path: '/forecasting',
+    title: 'Forecasting Energy',
+    description: 'Prediksi dan analisis tren konsumsi energi menggunakan AI',
+    subtitle: 'Prediksi konsumsi energi dengan model AI',
+    icon: TrendingUp,
+    size: 'large',
+    gradient: 'from-blue-500 to-cyan-600',
+    headerIconBg: 'bg-blue-600',
+    roles: ['admin', 'operator'],
+    owner: '',
+    task: '',
+    schedule: '',
+  },
+  {
+    key: 'pengaturan',
+    path: '/pengaturan',
+    title: 'Pengaturan Sistem',
+    description: 'Konfigurasi sistem',
+    subtitle: 'Konfigurasi zona waktu dan bahasa',
+    icon: Settings,
+    size: 'small',
+    gradient: 'from-purple-500 to-indigo-600',
+    headerIconBg: 'bg-purple-600',
+    roles: ['admin'],
+    owner: '',
+    task: '',
+    schedule: '',
+  },
+  {
+    key: 'ekspor',
+    path: '/ekspor',
+    title: 'Ekspor & Laporan',
+    description: 'Generate laporan',
+    subtitle: 'Generate dan export data laporan energi',
+    icon: FileText,
+    size: 'small',
+    gradient: 'from-orange-500 to-orange-600',
+    headerIconBg: 'bg-orange-500',
+    roles: ['admin', 'operator'],
+    owner: '',
+    task: '',
+    schedule: '',
+  },
+  {
+    key: 'maintenance',
+    path: '/maintenance',
+    title: 'Maintenance',
+    description: 'Pemeliharaan dan monitoring kesehatan sistem',
+    subtitle: 'Kelola perangkat power meter',
+    icon: Wrench,
+    size: 'small',
+    gradient: 'from-red-500 to-rose-600',
+    headerIconBg: 'bg-rose-600',
+    roles: ['admin'],
+    owner: '',
+    task: '',
+    schedule: '',
+  },
+]
+
+export function getFeature(key: FeatureKey): Feature {
+  return FEATURES.find((f) => f.key === key)!
+}
+
+export function canAccess(role: Role, feature: Feature): boolean {
+  return feature.roles.includes(role)
+}
+
+export const ROLE_LABEL: Record<Role, string> = {
+  admin: 'Admin',
+  operator: 'Operator',
+  viewer: 'Viewer',
+}

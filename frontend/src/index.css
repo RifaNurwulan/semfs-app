@@ -1,1 +1,17 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Warna mengikuti rancangan UI: palet bawaan Tailwind (emerald/teal/cyan,
+   blue, purple/indigo, orange, red/rose) di atas latar gray-50. */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
