@@ -13,6 +13,7 @@ USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 Role = Literal["admin", "operator", "viewer"]
+Severity = Literal["info", "warning", "critical"]
 
 
 def check_bcrypt_limit(value: Optional[str]) -> Optional[str]:
@@ -50,6 +51,46 @@ class UpdateProfileRequest(BaseModel):
         return check_bcrypt_limit(v)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., max_length=100, pattern=EMAIL_PATTERN)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def _new_password_limit(cls, v):
+        return check_bcrypt_limit(v)
+
+
+class CreateUserRequest(RegisterRequest):
+    """Admin membuat akun sekaligus menentukan role-nya."""
+
+    role: Role = "viewer"
+
+
+class SupportRequestIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., max_length=100, pattern=EMAIL_PATTERN)
+    message: str = Field(..., min_length=10, max_length=2000)
+
+
+class SupportStatusUpdate(BaseModel):
+    status: Literal["new", "resolved"]
+
+
+class SupportRequestOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    message: str
+    status: Literal["new", "resolved"]
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+
 class RoleUpdate(BaseModel):
     role: Role
 
@@ -60,6 +101,8 @@ class UserOut(BaseModel):
     email: str
     role: Role
     created_at: datetime
+    has_avatar: bool = False
+    avatar_updated_at: Optional[datetime] = None
 
 
 class TokenResponse(BaseModel):
@@ -71,3 +114,19 @@ class TokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class NotificationOut(BaseModel):
+    id: int
+    type: str
+    severity: Severity
+    title: str
+    message: Optional[str] = None
+    device_id: Optional[str] = None
+    created_at: datetime
+    read: bool
+
+
+class NotificationList(BaseModel):
+    items: list[NotificationOut]
+    unread_count: int

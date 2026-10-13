@@ -99,7 +99,10 @@ Jalankan file migration secara berurutan (masuk ke folder tempat file-file ini d
 psql -U postgres -d semfs_db -f backend/database/migrations/001_init_schema.sql
 psql -U postgres -d semfs_db -f backend/database/triggers/002_triggers_views.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/003_sample_data.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/004_notifications_avatar.sql
 ```
+
+(`004` menambah notifikasi, foto profil, dan pesan support. Aman dijalankan berulang.)
 
 Verifikasi:
 ```powershell
@@ -155,6 +158,30 @@ python modbus_reader.py
 Kalau berhasil, terminal 2 akan terus mencetak log `Tersimpan -> device=PM-001 ...` tiap 5 detik. Coba matikan (`Ctrl+C`) terminal 1 untuk menguji auto-reconnect — terminal 2 akan otomatis mencoba reconnect terus dan tersambung lagi begitu simulator dinyalakan ulang.
 
 ---
+
+### Menjalankan API (login, akun, notifikasi, support)
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+python -m app.seed_demo_users      # sekali saja: beri password ke 3 akun demo
+uvicorn app.main:app --reload
+```
+
+Dokumentasi API otomatis: http://127.0.0.1:8000/docs
+
+| Akun demo | Password | Role |
+|---|---|---|
+| `admin_rifa` | `Admin123!` | admin |
+| `operator_demo` | `Operator123!` | operator |
+| `viewer_demo` | `Viewer123!` | viewer |
+
+**Reset password & Hubungi Support** mengirim email lewat SMTP. Kalau `SMTP_HOST` di `.env` kosong (mode dev),
+tautan reset dan pesan support dicetak di terminal tempat `uvicorn` berjalan. Variabel `.env` lengkap ada di `backend/.env.example`.
+
+**Hak akses per role** (sesuai SRS): Monitoring dan Forecasting untuk semua role; Export Laporan untuk admin dan operator;
+Pengaturan Sistem, Maintenance, dan Kelola Pengguna khusus admin; Notifikasi untuk admin dan operator.
+Pengaturannya ada di `frontend/src/lib/features.ts` (satu baris per fitur).
 
 ## 4. Setup Frontend (React + TypeScript + Tailwind)
 

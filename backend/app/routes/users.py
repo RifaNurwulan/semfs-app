@@ -1,16 +1,19 @@
 """
 routes/users.py
 ---------------
-Kelola user -- khusus role admin (tugas 5c: RBAC).
+Kelola user -- khusus role admin (RBAC).
   GET   /users              daftar semua user
   PATCH /users/{id}/role    ubah role user
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..database import get_db
+from ..database import USER_COLUMNS, get_db
 from ..deps import require_roles
-from ..schemas import RoleUpdate, UserOut
+from psycopg2 import errors
+
+from ..schemas import CreateUserRequest, RoleUpdate, UserOut
+from ..security import hash_password
 
 router = APIRouter(prefix="/users", tags=["Users (khusus Admin)"])
 
@@ -18,8 +21,31 @@ router = APIRouter(prefix="/users", tags=["Users (khusus Admin)"])
 @router.get("", response_model=list[UserOut])
 def list_users(admin=Depends(require_roles("admin")), conn=Depends(get_db)):
     with conn.cursor() as cur:
-        cur.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id")
+        cur.execute(f"SELECT {USER_COLUMNS} FROM users ORDER BY id")
         return cur.fetchall()
+
+
+@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def create_user(body: CreateUserRequest, admin=Depends(require_roles("admin")), conn=Depends(get_db)):
+    """Admin membuat akun baru sekaligus menentukan role-nya (diagram use case: Admin -> Register Akun)."""
+    email = body.email.lower()
+    with conn.cursor() as cur:
+        cur.execute("SELECT username, email FROM users WHERE username = %s OR email = %s", (body.username, email))
+        existing = cur.fetchone()
+        if existing:
+            field = "Username" if existing["username"] == body.username else "Email"
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{field} sudah dipakai akun lain")
+        try:
+            cur.execute(
+                f"INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING {USER_COLUMNS}",
+                (body.username, email, hash_password(body.password), body.role),
+            )
+        except errors.UniqueViolation:
+            conn.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username atau email sudah dipakai akun lain")
+        user = cur.fetchone()
+    conn.commit()
+    return user
 
 
 @router.patch("/{user_id}/role", response_model=UserOut)
@@ -37,10 +63,7 @@ def change_role(
 
     with conn.cursor() as cur:
         cur.execute(
-            """
-            UPDATE users SET role = %s WHERE id = %s
-            RETURNING id, username, email, role, created_at
-            """,
+            f"UPDATE users SET role = %s WHERE id = %s RETURNING {USER_COLUMNS}",
             (body.role, user_id),
         )
         user = cur.fetchone()

@@ -67,9 +67,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return updated
   }, [])
 
+  const uploadAvatar = useCallback<AuthContextValue['uploadAvatar']>(async (image) => {
+    const token = getToken()
+    if (!token) throw new Error('Sesi tidak ditemukan')
+    const updated = await api.uploadAvatar(token, image)
+    setUser(updated)
+    return updated
+  }, [])
+
+  const removeAvatar = useCallback<AuthContextValue['removeAvatar']>(async () => {
+    const token = getToken()
+    if (!token) throw new Error('Sesi tidak ditemukan')
+    const updated = await api.deleteAvatar(token)
+    setUser(updated)
+    return updated
+  }, [])
+
   const value = useMemo(
-    () => ({ user, status, login, logout, updateProfile }),
-    [user, status, login, logout, updateProfile],
+    () => ({ user, status, login, logout, updateProfile, uploadAvatar, removeAvatar }),
+    [user, status, login, logout, updateProfile, uploadAvatar, removeAvatar],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,12 +1,17 @@
-import { Bell, LogOut, User as UserIcon, UserCog, Zap } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { LogOut, UserCog, Zap } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth, useUser } from '../../auth/auth-context'
 import { ROLE_LABEL } from '../../lib/features'
+import { useDismiss } from '../../lib/useDismiss'
+import { useNotifications } from '../../notifications/notification-context'
+import { Avatar } from '../ui/avatar'
+import { NotificationBell } from './NotificationBell'
 
 /** Header Dashboard: logo SEMFS, notifikasi, dan menu akun (Edit Profil / Keluar). */
-export function MainHeader({ alertCount = 0 }: { alertCount?: number }) {
+export function MainHeader() {
   const user = useUser()
+  const { enabled } = useNotifications()
 
   return (
     <header className="border-b border-gray-200 bg-white shadow-sm">
@@ -24,17 +29,7 @@ export function MainHeader({ alertCount = 0 }: { alertCount?: number }) {
         </Link>
 
         <div className="flex items-center gap-4">
-          <button
-            type="button"
-            aria-label="Notifikasi"
-            title="Notifikasi"
-            className="relative flex size-10 items-center justify-center rounded-xl text-gray-600 transition hover:bg-gray-100"
-          >
-            <Bell className="size-5" aria-hidden />
-            {alertCount > 0 && (
-              <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500 ring-2 ring-white" />
-            )}
-          </button>
+          {enabled && <NotificationBell />}
           <div className="hidden text-right sm:block">
             <p className="text-sm font-medium text-gray-900">{user.username}</p>
             <p className="text-xs text-gray-500">{user.email}</p>
@@ -51,22 +46,7 @@ function UserMenu() {
   const { logout } = useAuth()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onMouseDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
+  useDismiss(ref, open, setOpen)
 
   return (
     <div className="relative" ref={ref}>
@@ -75,10 +55,10 @@ function UserMenu() {
         aria-label="Menu akun"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="flex size-11 items-center justify-center rounded-xl bg-emerald-600 text-white transition hover:bg-emerald-700"
+        onClick={() => setOpen(!open)}
+        className="rounded-xl transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
       >
-        <UserIcon className="size-5" aria-hidden />
+        <Avatar user={user} />
       </button>
 
       {open && (

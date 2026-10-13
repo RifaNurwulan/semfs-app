@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge'
 import { Card } from '../components/ui/card'
 import { canAccess, FEATURES, type Feature } from '../lib/features'
 import { useHealth } from '../lib/useHealth'
+import { useNotifications } from '../notifications/notification-context'
 import { cn, formatTime } from '../lib/utils'
 
 interface Stat {
@@ -42,20 +43,26 @@ const STATS: Stat[] = [
     label: 'Efisiensi Sistem',
     trend: { dir: 'down', text: '15%', className: 'text-emerald-600' },
   },
-  {
-    icon: CircleAlert,
-    iconClass: 'bg-orange-100 text-orange-600',
-    value: '3 Alert',
-    label: 'Notifikasi Aktif',
-    note: 'Status',
-  },
 ]
 
-const COLUMNS = { 1: 'lg:grid-cols-1', 2: 'lg:grid-cols-2', 3: 'lg:grid-cols-3' } as const
+const COLUMNS = { 1: 'lg:grid-cols-1', 2: 'lg:grid-cols-2', 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4' } as const
 
 export default function DashboardPage() {
   const user = useUser()
   const health = useHealth()
+  const { enabled: canSeeAlerts, unreadCount } = useNotifications()
+
+  // Tiga kartu pertama masih data contoh; kartu notifikasi sudah memakai data asli dari API
+  const stats: Stat[] = [
+    ...STATS,
+    {
+      icon: CircleAlert,
+      iconClass: 'bg-orange-100 text-orange-600',
+      value: canSeeAlerts ? `${unreadCount} Alert` : '-',
+      label: 'Notifikasi Aktif',
+      note: canSeeAlerts ? 'Belum dibaca' : 'Khusus admin/operator',
+    },
+  ]
 
   const allowed = FEATURES.filter((f) => canAccess(user.role, f))
   const large = allowed.filter((f) => f.size === 'large')
@@ -63,7 +70,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen">
-      <MainHeader alertCount={3} />
+      <MainHeader />
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
         <div>
@@ -73,11 +80,11 @@ export default function DashboardPage() {
 
         <section aria-label="Ringkasan" className="space-y-2">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {STATS.map((s) => (
+            {stats.map((s) => (
               <StatCard key={s.label} stat={s} />
             ))}
           </div>
-          <p className="text-xs text-gray-400">Data contoh, belum terhubung ke API.</p>
+          <p className="text-xs text-gray-400">Data contoh pada 3 kartu pertama, belum terhubung ke API.</p>
         </section>
 
         <section aria-labelledby="menu-utama" className="space-y-4">
@@ -94,7 +101,7 @@ export default function DashboardPage() {
             </div>
           )}
           {small.length > 0 && (
-            <div className={cn('grid gap-4 sm:grid-cols-2', COLUMNS[small.length as 1 | 2 | 3])}>
+            <div className={cn('grid gap-4 sm:grid-cols-2', COLUMNS[small.length as 1 | 2 | 3 | 4])}>
               {small.map((f) => (
                 <FeatureCard key={f.key} feature={f} />
               ))}

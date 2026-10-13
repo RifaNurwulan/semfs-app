@@ -1,14 +1,16 @@
-import { KeyRound, UserCog, UserRound } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Camera, KeyRound, UserCog, UserRound } from 'lucide-react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useAuth, useUser } from '../auth/auth-context'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Alert } from '../components/ui/alert'
+import { Avatar } from '../components/ui/avatar'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardHeading } from '../components/ui/card'
 import { Field, Input } from '../components/ui/input'
 import { ApiError } from '../lib/api'
 import { ROLE_LABEL } from '../lib/features'
+import { AVATAR_ACCEPT, squareAvatarBlob } from '../lib/image'
 import { EMAIL_RE, passwordError, USERNAME_RE } from '../lib/validation'
 import { formatDate } from '../lib/utils'
 
@@ -22,6 +24,7 @@ export default function ProfilePage() {
         subtitle="Kelola informasi akun dan keamanan Anda"
       />
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
+        <AvatarCard />
         <AccountCard />
         <PasswordCard />
       </main>
@@ -31,6 +34,73 @@ export default function ProfilePage() {
 
 function messageOf(err: unknown) {
   return err instanceof ApiError ? err.message : 'Terjadi kesalahan. Coba lagi.'
+}
+
+function AvatarCard() {
+  const user = useUser()
+  const { uploadAvatar, removeAvatar } = useAuth()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  async function run(action: () => Promise<unknown>, doneMessage: string) {
+    setBusy(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      await action()
+      setSuccess(doneMessage)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Terjadi kesalahan. Coba lagi.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handlePick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // supaya foto yang sama bisa dipilih ulang
+    if (!file) return
+    void run(async () => uploadAvatar(await squareAvatarBlob(file)), 'Foto profil berhasil diperbarui.')
+  }
+
+  return (
+    <Card className="p-6">
+      <CardHeading icon={<Camera className="size-5" />} title="Foto Profil" description="Tampil di pojok kanan atas dan menu akun" />
+
+      <div className="mt-6 space-y-5">
+        {error && <Alert variant="error">{error}</Alert>}
+        {success && <Alert variant="success">{success}</Alert>}
+
+        <div className="flex flex-wrap items-center gap-5">
+          <Avatar user={user} size="lg" />
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={inputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                onChange={handlePick}
+                aria-label="Pilih file foto profil"
+                data-testid="avatar-input"
+                className="hidden"
+              />
+              <Button variant="outline" size="sm" loading={busy} onClick={() => inputRef.current?.click()}>
+                {user.has_avatar ? 'Ganti Foto' : 'Pilih Foto'}
+              </Button>
+              {user.has_avatar && (
+                <Button variant="danger" size="sm" disabled={busy} onClick={() => void run(removeAvatar, 'Foto profil dihapus.')}>
+                  Hapus Foto
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">JPG, PNG, atau WebP. Foto dipotong persegi dan diperkecil otomatis.</p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
 }
 
 function AccountCard() {

@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from 'react'
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -54,5 +54,19 @@ export function Field({ label, htmlFor, error, hint, children }: FieldProps) {
         hint && <p className="text-sm text-gray-500">{hint}</p>
       )}
     </div>
+  )
+}
+
+export function Textarea({ className, invalid, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
+  return (
+    <textarea
+      aria-invalid={invalid || undefined}
+      className={cn(
+        'min-h-32 w-full rounded-xl border bg-white px-3.5 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15',
+        invalid ? 'border-rose-400' : 'border-gray-200',
+        className,
+      )}
+      {...props}
+    />
   )
 }

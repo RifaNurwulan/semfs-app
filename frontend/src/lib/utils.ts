@@ -19,3 +19,16 @@ export function formatTime(date: Date) {
     timeZone: 'Asia/Jakarta',
   }).format(date)
 }
+
+const relative = new Intl.RelativeTimeFormat('id', { numeric: 'auto' })
+
+/** "baru saja", "5 menit yang lalu", "kemarin", ... */
+export function formatRelative(iso: string, now = new Date()): string {
+  const seconds = Math.round((new Date(iso).getTime() - now.getTime()) / 1000)
+  const abs = Math.abs(seconds)
+  if (abs < 60) return 'baru saja'
+  if (abs < 3600) return relative.format(Math.round(seconds / 60), 'minute')
+  if (abs < 86400) return relative.format(Math.round(seconds / 3600), 'hour')
+  if (abs < 86400 * 30) return relative.format(Math.round(seconds / 86400), 'day')
+  return formatDate(iso)
+}

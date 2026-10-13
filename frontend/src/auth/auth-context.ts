@@ -9,6 +9,8 @@ export interface AuthContextValue {
   login: (identifier: string, password: string, remember: boolean) => Promise<User>
   logout: () => Promise<void>
   updateProfile: (payload: UpdateProfilePayload) => Promise<User>
+  uploadAvatar: (image: Blob) => Promise<User>
+  removeAvatar: () => Promise<User>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

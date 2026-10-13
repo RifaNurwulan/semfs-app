@@ -1,6 +1,6 @@
 import { Activity, Eye, EyeOff, Lock, Mail, TrendingUp, Zap } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -23,7 +23,9 @@ export default function LoginPage() {
   const { status, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from ?? '/'
+  const state = location.state as { from?: string; notice?: string } | null
+  const from = state?.from ?? '/'
+  const notice = state?.notice
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -31,7 +33,6 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
   const [touched, setTouched] = useState(false)
 
   if (status === 'authenticated') return <Navigate to={from} replace />
@@ -42,7 +43,6 @@ export default function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setTouched(true)
-    setInfo(null)
     if (!identifier.trim() || !password) return
 
     setSubmitting(true)
@@ -111,7 +111,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
             {error && <Alert variant="error">{error}</Alert>}
-            {info && <Alert variant="info">{info}</Alert>}
+            {notice && !error && <Alert variant="success">{notice}</Alert>}
 
             <Field label="Email atau Username" htmlFor="identifier" error={identifierError}>
               <Input
@@ -160,15 +160,9 @@ export default function LoginPage() {
                 />
                 Ingat saya
               </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setInfo('Fitur reset password belum tersedia. Hubungi admin untuk mengatur ulang password.')
-                }
-                className="font-medium text-emerald-600 hover:text-emerald-700"
-              >
+              <Link to="/lupa-password" className="font-medium text-emerald-600 hover:text-emerald-700">
                 Lupa password?
-              </button>
+              </Link>
             </div>
 
             <Button type="submit" loading={submitting} className="w-full">
@@ -176,13 +170,23 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          <p className="mt-5 text-center text-sm text-gray-600">
+            Belum punya akun?{' '}
+            <Link to="/daftar" className="font-medium text-emerald-600 hover:text-emerald-700">
+              Daftar sekarang
+            </Link>
+          </p>
+
           <div className="mt-6 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             <Lock className="size-4" aria-hidden />
             Sesi login diamankan dengan token JWT
           </div>
 
           <p className="mt-6 text-center text-sm text-gray-600">
-            Butuh bantuan? <span className="font-medium text-emerald-600">Hubungi Support</span>
+            Butuh bantuan?{' '}
+            <Link to="/bantuan" className="font-medium text-emerald-600 hover:text-emerald-700">
+              Hubungi Support
+            </Link>
           </p>
         </div>
       </main>

@@ -20,7 +20,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .database import get_db
+from .database import USER_COLUMNS, get_db
 from .security import decode_access_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -44,6 +44,7 @@ def get_current_user(
     try:
         payload = decode_access_token(creds.credentials)
         user_id = int(payload["sub"])
+        issued_at = int(payload.get("iat", 0))
     except jwt.ExpiredSignatureError:
         raise _unauthorized("Sesi sudah berakhir, silakan login ulang")
     except (jwt.InvalidTokenError, KeyError, ValueError):
@@ -51,14 +52,16 @@ def get_current_user(
 
     # Role diambil dari database (bukan dari token) supaya perubahan role langsung berlaku
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, username, email, role, created_at FROM users WHERE id = %s",
-            (user_id,),
-        )
+        cur.execute(f"SELECT {USER_COLUMNS}, password_changed_at FROM users WHERE id = %s", (user_id,))
         user = cur.fetchone()
 
     if user is None:
         raise _unauthorized("Akun tidak ditemukan")
+
+    # Password pernah direset setelah token ini dibuat -> token lama tidak berlaku lagi
+    changed_at = user.pop("password_changed_at")
+    if changed_at is not None and issued_at < int(changed_at.timestamp()):
+        raise _unauthorized("Password sudah diganti, silakan login ulang")
     return user
 
 

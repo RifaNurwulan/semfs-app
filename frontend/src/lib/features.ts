@@ -1,7 +1,7 @@
-import { Activity, FileText, Settings, TrendingUp, Wrench, type LucideIcon } from 'lucide-react'
+import { Activity, FileText, Settings, TrendingUp, Users, Wrench, type LucideIcon } from 'lucide-react'
 import type { Role } from './api'
 
-export type FeatureKey = 'monitoring' | 'forecasting' | 'pengaturan' | 'ekspor' | 'maintenance'
+export type FeatureKey = 'monitoring' | 'forecasting' | 'pengaturan' | 'ekspor' | 'maintenance' | 'pengguna'
 
 export interface Feature {
   key: FeatureKey
@@ -36,9 +36,9 @@ export const FEATURES: Feature[] = [
     gradient: 'from-emerald-500 to-teal-600',
     headerIconBg: 'bg-emerald-600',
     roles: ['admin', 'operator', 'viewer'],
-    owner: '',
-    task: '',
-    schedule: '',
+    owner: 'Irfan',
+    task: 'Poin 6b-6c',
+    schedule: 'W5-W6',
   },
   {
     key: 'forecasting',
@@ -50,10 +50,11 @@ export const FEATURES: Feature[] = [
     size: 'large',
     gradient: 'from-blue-500 to-cyan-600',
     headerIconBg: 'bg-blue-600',
-    roles: ['admin', 'operator'],
-    owner: '',
-    task: '',
-    schedule: '',
+    // SRS 2.3 + diagram use case: Viewer juga boleh melihat forecast
+    roles: ['admin', 'operator', 'viewer'],
+    owner: 'Rifat',
+    task: 'Poin 7c',
+    schedule: 'W4-W5',
   },
   {
     key: 'pengaturan',
@@ -66,9 +67,9 @@ export const FEATURES: Feature[] = [
     gradient: 'from-purple-500 to-indigo-600',
     headerIconBg: 'bg-purple-600',
     roles: ['admin'],
-    owner: '',
-    task: '',
-    schedule: '',
+    owner: 'Ilham',
+    task: 'Poin 8b',
+    schedule: 'W7',
   },
   {
     key: 'ekspor',
@@ -81,9 +82,9 @@ export const FEATURES: Feature[] = [
     gradient: 'from-orange-500 to-orange-600',
     headerIconBg: 'bg-orange-500',
     roles: ['admin', 'operator'],
-    owner: '',
-    task: '',
-    schedule: '',
+    owner: 'Ilham',
+    task: 'Poin 8a',
+    schedule: 'W6-W7',
   },
   {
     key: 'maintenance',
@@ -96,9 +97,24 @@ export const FEATURES: Feature[] = [
     gradient: 'from-red-500 to-rose-600',
     headerIconBg: 'bg-rose-600',
     roles: ['admin'],
-    owner: '',
-    task: '',
-    schedule: '',
+    owner: 'Ilham',
+    task: 'Poin 8c',
+    schedule: 'W7-W8',
+  },
+  {
+    key: 'pengguna',
+    path: '/pengguna',
+    title: 'Kelola Pengguna',
+    description: 'Atur akun, role, dan pesan support',
+    subtitle: 'Kelola akun pengguna, role, dan pesan support',
+    icon: Users,
+    size: 'small',
+    gradient: 'from-slate-600 to-slate-800',
+    headerIconBg: 'bg-slate-700',
+    roles: ['admin'],
+    owner: 'Rifa',
+    task: 'Tambahan di luar timeline',
+    schedule: '-',
   },
 ]
 
