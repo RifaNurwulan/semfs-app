@@ -81,7 +81,8 @@ export const FEATURES: Feature[] = [
     size: 'small',
     gradient: 'from-orange-500 to-orange-600',
     headerIconBg: 'bg-orange-500',
-    roles: ['admin', 'operator'],
+    // SRS: diagram use case dan skenario Export Laporan mengizinkan semua pengguna (hanya teks 2.3 yang menyebut Operator)
+    roles: ['admin', 'operator', 'viewer'],
     owner: 'Ilham',
     task: 'Poin 8a',
     schedule: 'W6-W7',

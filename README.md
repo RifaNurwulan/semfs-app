@@ -100,9 +100,10 @@ psql -U postgres -d semfs_db -f backend/database/migrations/001_init_schema.sql
 psql -U postgres -d semfs_db -f backend/database/triggers/002_triggers_views.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/003_sample_data.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/004_notifications_avatar.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/005_devices_alerts_audit.sql
 ```
 
-(`004` menambah notifikasi, foto profil, dan pesan support. Aman dijalankan berulang.)
+(`004` menambah notifikasi, foto profil, dan pesan support. `005` menambah batas daya per device, log aktivitas, dan trigger notifikasi batas konsumsi. Keduanya aman dijalankan berulang.)
 
 Verifikasi:
 ```powershell
@@ -141,23 +142,23 @@ DB_NAME=semfs_db
 JWT_SECRET=<isi_string_rahasia_bebas>
 ```
 
-### Tes koneksi Modbus + database (simulator, tanpa device fisik)
+### Membaca data device (Modbus) -- paralel, konfigurasi dari database
 
-Buka **2 terminal**, keduanya di folder `backend` dengan venv aktif.
+Konfigurasi device (IP, port, Virtual ID, alamat register, batas daya) diatur admin di halaman **Maintenance**.
+`modbus_reader.py` membaca semua device aktif dari database secara paralel; perubahan konfigurasi terdeteksi otomatis (tanpa restart).
 
-Terminal 1 — jalankan simulator power meter:
+Tanpa alat asli, pakai simulator. Buka 2 terminal (keduanya venv aktif, di folder `backend`):
+
 ```powershell
-python mock_power_meter.py
-```
+# Terminal 1: 3 device palsu. Format PORT:VIRTUAL_ID:REGISTER
+python mock_power_meter.py 5021:1:0 5022:2:10 5023:3:100
 
-Terminal 2 — jalankan service pembaca data:
-```powershell
+# Terminal 2: pembaca data
 python modbus_reader.py
 ```
 
-Kalau berhasil, terminal 2 akan terus mencetak log `Tersimpan -> device=PM-001 ...` tiap 5 detik. Coba matikan (`Ctrl+C`) terminal 1 untuk menguji auto-reconnect — terminal 2 akan otomatis mencoba reconnect terus dan tersambung lagi begitu simulator dinyalakan ulang.
-
----
+Lalu di Maintenance, ubah PM-001..PM-003 menjadi IP `127.0.0.1` dengan port/Virtual ID/register sesuai di atas, dan klik tombol **Uji koneksi**.
+Matikan simulator untuk melihat status berubah offline + notifikasi. Isi **Batas daya** kecil (mis. 100 W) untuk melihat notifikasi batas konsumsi.
 
 ### Menjalankan API (login, akun, notifikasi, support)
 
@@ -179,7 +180,7 @@ Dokumentasi API otomatis: http://127.0.0.1:8000/docs
 **Reset password & Hubungi Support** mengirim email lewat SMTP. Kalau `SMTP_HOST` di `.env` kosong (mode dev),
 tautan reset dan pesan support dicetak di terminal tempat `uvicorn` berjalan. Variabel `.env` lengkap ada di `backend/.env.example`.
 
-**Hak akses per role** (sesuai SRS): Monitoring dan Forecasting untuk semua role; Export Laporan untuk admin dan operator;
+**Hak akses per role** (sesuai SRS): Monitoring dan Forecasting untuk semua role; Export Laporan untuk semua role;
 Pengaturan Sistem, Maintenance, dan Kelola Pengguna khusus admin; Notifikasi untuk admin dan operator.
 Pengaturannya ada di `frontend/src/lib/features.ts` (satu baris per fitur).
 

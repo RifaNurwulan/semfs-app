@@ -4,6 +4,7 @@ import { RequireAuth, RequireRole } from './auth/guards'
 import { NotificationProvider } from './notifications/NotificationProvider'
 import DashboardPage from './pages/DashboardPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import MaintenancePage from './pages/maintenance/MaintenancePage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import PlaceholderPage from './pages/PlaceholderPage'
@@ -78,7 +79,7 @@ export default function App() {
               path="maintenance"
               element={
                 <RequireRole feature="maintenance">
-                  <PlaceholderPage feature="maintenance" />
+                  <MaintenancePage />
                 </RequireRole>
               }
             />

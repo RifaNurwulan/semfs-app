@@ -11,6 +11,7 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 
+from ..audit import record
 from ..database import get_db
 from ..deps import require_roles
 from ..email_service import send_support_email
@@ -82,6 +83,7 @@ def list_messages(
 def update_status(
     request_id: int,
     body: SupportStatusUpdate,
+    request: Request,
     admin=Depends(require_roles("admin")),
     conn=Depends(get_db),
 ):
@@ -98,5 +100,6 @@ def update_status(
         row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pesan tidak ditemukan")
+    record(conn, "support_status", user=admin, entity="support", entity_id=request_id, detail=body.status, request=request)
     conn.commit()
     return row

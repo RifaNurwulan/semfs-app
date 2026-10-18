@@ -30,6 +30,7 @@ from ..config import (
     RESET_REVEAL_UNKNOWN_EMAIL,
     RESET_TOKEN_EXPIRE_MINUTES,
 )
+from ..audit import record
 from ..database import USER_COLUMNS, get_db
 from ..deps import get_current_user
 from ..email_service import send_reset_email
@@ -68,7 +69,7 @@ def _hash_token(token: str) -> str:
 
 # ---------------------------------------------------------------- register / login
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register(body: RegisterRequest, conn=Depends(get_db)):
+def register(body: RegisterRequest, request: Request, conn=Depends(get_db)):
     email = body.email.lower()
 
     with conn.cursor() as cur:
@@ -93,12 +94,13 @@ def register(body: RegisterRequest, conn=Depends(get_db)):
             conn.rollback()
             raise _conflict("Username atau email")
         user = cur.fetchone()
+    record(conn, "register", username=user["username"], entity="user", entity_id=user["id"], request=request)
     conn.commit()
     return user
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, conn=Depends(get_db)):
+def login(body: LoginRequest, request: Request, conn=Depends(get_db)):
     identifier = body.username.strip()
 
     with conn.cursor() as cur:
@@ -119,6 +121,8 @@ def login(body: LoginRequest, conn=Depends(get_db)):
         )
 
     user = {k: v for k, v in row.items() if k != "password_hash"}
+    record(conn, "login", user=user, request=request)
+    conn.commit()
     return TokenResponse(
         access_token=create_access_token(user["id"], user["role"]),
         expires_in=JWT_EXPIRE_MINUTES * 60,
@@ -127,9 +131,11 @@ def login(body: LoginRequest, conn=Depends(get_db)):
 
 
 @router.post("/logout", response_model=MessageResponse)
-def logout(user=Depends(get_current_user)):
+def logout(request: Request, user=Depends(get_current_user), conn=Depends(get_db)):
     # JWT bersifat stateless: server tidak menyimpan sesi. Logout = client (frontend)
     # menghapus token yang tersimpan. Token lama otomatis mati saat kedaluwarsa.
+    record(conn, "logout", user=user, request=request)
+    conn.commit()
     return {"message": "Logout berhasil. Hapus token di sisi client."}
 
 
@@ -140,7 +146,7 @@ def read_me(user=Depends(get_current_user)):
 
 
 @router.put("/me", response_model=UserOut)
-def update_me(body: UpdateProfileRequest, user=Depends(get_current_user), conn=Depends(get_db)):
+def update_me(body: UpdateProfileRequest, request: Request, user=Depends(get_current_user), conn=Depends(get_db)):
     sets, params = [], []
 
     if body.username is not None and body.username != user["username"]:
@@ -182,13 +188,15 @@ def update_me(body: UpdateProfileRequest, user=Depends(get_current_user), conn=D
             conn.rollback()
             raise _conflict("Username atau email")
         updated = cur.fetchone()
+    changed = ", ".join(s.split(" = ")[0].replace("password_hash", "password") for s in sets)
+    record(conn, "profile_update", user=user, entity="user", entity_id=user["id"], detail=changed, request=request)
     conn.commit()
     return updated
 
 
 # ---------------------------------------------------------------- reset password (SRS use case #3)
 @router.post("/forgot-password", response_model=MessageResponse)
-def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, conn=Depends(get_db)):
+def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, request: Request, conn=Depends(get_db)):
     email = body.email.lower()
     sent = {"message": "Tautan reset password sudah dikirim ke email Anda."}
     # Dipakai kalau RESET_REVEAL_UNKNOWN_EMAIL=false: jawaban sama untuk semua kasus
@@ -225,6 +233,7 @@ def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, co
                 user["id"],
             ),
         )
+    record(conn, "password_reset_request", username=user["username"], entity="user", entity_id=user["id"], request=request)
     conn.commit()
 
     background.add_task(send_reset_email, email, user["username"], f"{FRONTEND_URL}/reset-password?token={token}")
@@ -232,7 +241,7 @@ def forgot_password(body: ForgotPasswordRequest, background: BackgroundTasks, co
 
 
 @router.post("/reset-password", response_model=MessageResponse)
-def reset_password(body: ResetPasswordRequest, conn=Depends(get_db)):
+def reset_password(body: ResetPasswordRequest, request: Request, conn=Depends(get_db)):
     # Satu perintah UPDATE: cek token + masa berlaku + ganti password + hapus token.
     # Dua request bersamaan dengan token yang sama tidak mungkin sama-sama berhasil.
     with conn.cursor() as cur:
@@ -241,7 +250,7 @@ def reset_password(body: ResetPasswordRequest, conn=Depends(get_db)):
             UPDATE users
             SET password_hash = %s, reset_token = NULL, reset_token_expiry = NULL, password_changed_at = now()
             WHERE reset_token = %s AND reset_token_expiry > now()
-            RETURNING id
+            RETURNING id, username
             """,
             (hash_password(body.new_password), _hash_token(body.token)),
         )
@@ -251,6 +260,7 @@ def reset_password(body: ResetPasswordRequest, conn=Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tautan reset tidak valid atau sudah kedaluwarsa",
         )
+    record(conn, "password_reset", username=row["username"], entity="user", entity_id=row["id"], request=request)
     conn.commit()
     return {"message": "Password berhasil diganti. Silakan login dengan password baru."}
 
@@ -268,16 +278,17 @@ def sniff_image(data: bytes) -> str | None:
     return None
 
 
-def _save_avatar(conn, user_id: int, data: bytes, mime: str) -> dict:
+def _save_avatar(conn, user: dict, data: bytes, mime: str, request) -> dict:
     with conn.cursor() as cur:
         cur.execute(
             f"""
             UPDATE users SET avatar = %s, avatar_mime = %s, avatar_updated_at = now()
             WHERE id = %s RETURNING {USER_COLUMNS}
             """,
-            (data, mime, user_id),
+            (data, mime, user["id"]),
         )
         updated = cur.fetchone()
+    record(conn, "avatar_update", user=user, request=request)
     conn.commit()
     return updated
 
@@ -307,7 +318,7 @@ async def upload_avatar(request: Request, user=Depends(get_current_user), conn=D
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Format foto harus PNG, JPEG, atau WebP",
         )
-    return await run_in_threadpool(_save_avatar, conn, user["id"], data, mime)
+    return await run_in_threadpool(_save_avatar, conn, user, data, mime, request)
 
 
 @router.get("/me/avatar")
@@ -325,7 +336,7 @@ def read_avatar(user=Depends(get_current_user), conn=Depends(get_db)):
 
 
 @router.delete("/me/avatar", response_model=UserOut)
-def delete_avatar(user=Depends(get_current_user), conn=Depends(get_db)):
+def delete_avatar(request: Request, user=Depends(get_current_user), conn=Depends(get_db)):
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -335,5 +346,6 @@ def delete_avatar(user=Depends(get_current_user), conn=Depends(get_db)):
             (user["id"],),
         )
         updated = cur.fetchone()
+    record(conn, "avatar_delete", user=user, request=request)
     conn.commit()
     return updated

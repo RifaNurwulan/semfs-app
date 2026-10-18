@@ -57,6 +57,66 @@ export interface NewUserPayload {
   password: string
 }
 
+export type DeviceStatus = 'online' | 'offline' | 'error'
+
+export interface Device {
+  id: number
+  device_id: string
+  device_name: string | null
+  ip_address: string
+  port: number
+  virtual_id: number | null
+  register_address: number | null
+  location: string | null
+  status: DeviceStatus
+  last_seen_at: string | null
+  enabled: boolean
+  power_limit_w: number | null
+  created_at: string
+  uptime_24h: number | null
+}
+
+export interface DevicePayload {
+  device_name: string | null
+  ip_address: string
+  port: number
+  virtual_id: number
+  register_address: number
+  location: string | null
+  power_limit_w: number | null
+  enabled: boolean
+}
+
+export interface ProbeResult {
+  ok: boolean
+  message: string
+  arus: number | null
+  tegangan: number | null
+  daya: number | null
+}
+
+export interface AuditLog {
+  id: number
+  at: string
+  username: string | null
+  action: string
+  entity: string | null
+  entity_id: string | null
+  detail: string | null
+  ip: string | null
+}
+
+export interface AuditLogList {
+  items: AuditLog[]
+  next_before_id: number | null
+}
+
+export interface RestoreResult {
+  created: number
+  updated: number
+  message: string
+}
+
 export interface NotificationList {
   items: NotificationItem[]
   unread_count: number
@@ -143,6 +203,26 @@ export const api = {
     request<User>('/users', { method: 'POST', body: payload, token }),
   changeRole: (token: string, id: number, role: Role) =>
     request<User>(`/users/${id}/role`, { method: 'PATCH', body: { role }, token }),
+
+  listDevices: (token: string) => request<Device[]>('/devices', { token }),
+  createDevice: (token: string, payload: DevicePayload & { device_id: string }) =>
+    request<Device>('/devices', { method: 'POST', body: payload, token }),
+  updateDevice: (token: string, deviceId: string, payload: Partial<DevicePayload>) =>
+    request<Device>(`/devices/${encodeURIComponent(deviceId)}`, { method: 'PUT', body: payload, token }),
+  deleteDevice: (token: string, deviceId: string, purge: boolean) =>
+    request<{ message: string }>(`/devices/${encodeURIComponent(deviceId)}?purge=${purge}`, { method: 'DELETE', token }),
+  testDevice: (token: string, deviceId: string) =>
+    request<ProbeResult>(`/devices/${encodeURIComponent(deviceId)}/test`, { method: 'POST', token }),
+
+  auditLogs: (token: string, opts: { beforeId?: number | null; action?: string } = {}) => {
+    const q = new URLSearchParams({ limit: '25' })
+    if (opts.beforeId) q.set('before_id', String(opts.beforeId))
+    if (opts.action) q.set('action', opts.action)
+    return request<AuditLogList>(`/maintenance/audit-logs?${q}`, { token })
+  },
+  backupConfig: (token: string) => request<Blob>('/maintenance/backup', { token, responseType: 'blob' }),
+  restoreConfig: (token: string, file: Blob) =>
+    request<RestoreResult>('/maintenance/restore', { method: 'POST', rawBody: file, token }),
 
   sendSupport: (payload: { name: string; email: string; message: string }) =>
     request<{ message: string }>('/support', { method: 'POST', body: payload }),

@@ -6,6 +6,7 @@ import { MainHeader } from '../components/layout/MainHeader'
 import { Badge } from '../components/ui/badge'
 import { Card } from '../components/ui/card'
 import { canAccess, FEATURES, type Feature } from '../lib/features'
+import { useDevices } from '../lib/useDevices'
 import { useHealth } from '../lib/useHealth'
 import { useNotifications } from '../notifications/notification-context'
 import { cn, formatTime } from '../lib/utils'
@@ -45,11 +46,21 @@ const STATS: Stat[] = [
   },
 ]
 
+interface DeviceSummary {
+  total: number
+  online: number
+  problems: number
+}
+
 const COLUMNS = { 1: 'lg:grid-cols-1', 2: 'lg:grid-cols-2', 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4' } as const
 
 export default function DashboardPage() {
   const user = useUser()
   const health = useHealth()
+  const { devices } = useDevices()
+  const active = (devices ?? []).filter((d) => d.enabled)
+  const online = active.filter((d) => d.status === 'online').length
+  const summary: DeviceSummary | null = devices ? { total: devices.length, online, problems: active.length - online } : null
   const { enabled: canSeeAlerts, unreadCount } = useNotifications()
 
   // Tiga kartu pertama masih data contoh; kartu notifikasi sudah memakai data asli dari API
@@ -96,14 +107,14 @@ export default function DashboardPage() {
           {large.length > 0 && (
             <div className={cn('grid gap-4', COLUMNS[large.length as 1 | 2])}>
               {large.map((f) => (
-                <FeatureCard key={f.key} feature={f} />
+                <FeatureCard key={f.key} feature={f} summary={summary} />
               ))}
             </div>
           )}
           {small.length > 0 && (
             <div className={cn('grid gap-4 sm:grid-cols-2', COLUMNS[small.length as 1 | 2 | 3 | 4])}>
               {small.map((f) => (
-                <FeatureCard key={f.key} feature={f} />
+                <FeatureCard key={f.key} feature={f} summary={summary} />
               ))}
             </div>
           )}
@@ -153,7 +164,7 @@ function StatCard({ stat }: { stat: Stat }) {
   )
 }
 
-function FeatureCard({ feature }: { feature: Feature }) {
+function FeatureCard({ feature, summary }: { feature: Feature; summary: DeviceSummary | null }) {
   const { icon: Icon, title, description, gradient, size, key } = feature
   const large = size === 'large'
 
@@ -178,8 +189,8 @@ function FeatureCard({ feature }: { feature: Feature }) {
       <div className="relative mt-5 flex flex-wrap gap-2">
         {key === 'monitoring' && (
           <>
-            <Badge tone="glass">Online</Badge>
-            <Badge tone="glass">24 Device</Badge>
+            <Badge tone="glass">{summary ? `${summary.online} Online` : '...'}</Badge>
+            <Badge tone="glass">{summary ? `${summary.total} Device` : '...'}</Badge>
           </>
         )}
         {key === 'forecasting' && (
@@ -190,8 +201,8 @@ function FeatureCard({ feature }: { feature: Feature }) {
         )}
         {key === 'maintenance' && (
           <Badge tone="glass" className="bg-white/25">
-            <span className="size-2 rounded-full bg-emerald-400" />
-            Sistem Normal
+            <span className={cn('size-2 rounded-full', summary && summary.problems > 0 ? 'bg-amber-300' : 'bg-emerald-400')} />
+            {!summary ? '...' : summary.problems === 0 ? 'Sistem Normal' : `${summary.problems} device bermasalah`}
           </Badge>
         )}
       </div>

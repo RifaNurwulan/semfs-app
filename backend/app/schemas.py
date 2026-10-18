@@ -91,6 +91,81 @@ class SupportRequestOut(BaseModel):
     resolved_at: Optional[datetime] = None
 
 
+class DeviceBase(BaseModel):
+    device_name: Optional[str] = Field(None, max_length=100)
+    ip_address: str = Field(..., min_length=1, max_length=45)
+    port: int = Field(502, ge=1, le=65535)
+    virtual_id: int = Field(1, ge=0, le=247)  # Modbus Unit/Slave ID
+    register_address: int = Field(0, ge=0, le=65535)  # alamat register pertama (arus, tegangan, daya berurutan)
+    location: Optional[str] = Field(None, max_length=150)
+    power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)  # batas daya (W) untuk notifikasi F-13
+    enabled: bool = True
+
+
+class DeviceCreate(DeviceBase):
+    device_id: str = Field(..., min_length=2, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class DeviceUpdate(BaseModel):
+    """Semua field opsional; yang tidak dikirim tidak berubah. power_limit_w=null berarti hapus batas."""
+
+    device_name: Optional[str] = Field(None, max_length=100)
+    ip_address: Optional[str] = Field(None, min_length=1, max_length=45)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    virtual_id: Optional[int] = Field(None, ge=0, le=247)
+    register_address: Optional[int] = Field(None, ge=0, le=65535)
+    location: Optional[str] = Field(None, max_length=150)
+    power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)
+    enabled: Optional[bool] = None
+
+
+class DeviceOut(BaseModel):
+    id: int
+    device_id: str
+    device_name: Optional[str] = None
+    ip_address: str
+    port: int
+    virtual_id: Optional[int] = None
+    register_address: Optional[int] = None
+    location: Optional[str] = None
+    status: Literal["online", "offline", "error"]
+    last_seen_at: Optional[datetime] = None
+    enabled: bool
+    power_limit_w: Optional[float] = None
+    created_at: datetime
+    uptime_24h: Optional[float] = None  # persen, None = belum pernah terhubung
+
+
+class ProbeResult(BaseModel):
+    ok: bool
+    message: str
+    arus: Optional[float] = None
+    tegangan: Optional[float] = None
+    daya: Optional[float] = None
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    at: datetime
+    username: Optional[str] = None
+    action: str
+    entity: Optional[str] = None
+    entity_id: Optional[str] = None
+    detail: Optional[str] = None
+    ip: Optional[str] = None
+
+
+class AuditLogList(BaseModel):
+    items: list[AuditLogOut]
+    next_before_id: Optional[int] = None  # kirim sebagai before_id untuk halaman berikutnya
+
+
+class RestoreResult(BaseModel):
+    created: int
+    updated: int
+    message: str
+
+
 class RoleUpdate(BaseModel):
     role: Role
 

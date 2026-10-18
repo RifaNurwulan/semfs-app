@@ -1,77 +1,61 @@
 """
 mock_power_meter.py
---------------------
-Simulator Modbus TCP -- pura-pura jadi power meter asli.
-Tugas: Rifa - Poin 3d (bagian testing)
+-------------------
+Simulator power meter (Modbus TCP) untuk testing tanpa alat asli. Bisa menjalankan BEBERAPA device sekaligus.
 
 Cara pakai:
-    python mock_power_meter.py
+    python mock_power_meter.py                      # 1 device: port 5020, Virtual ID 1, register 0
+    python mock_power_meter.py 5021:1:0 5022:2:10   # beberapa device, format  PORT:VIRTUAL_ID:REGISTER
 
-Register yang disediakan (Holding Register, alamat mulai dari 0):
-    0 -> Arus   (Ampere x 100, misal 512 berarti 5.12 A)
-    1 -> Tegangan (Volt x 10, misal 2201 berarti 220.1 V)
-    2 -> Daya   (Watt, bilangan bulat)
-
-Nilainya di-random ulang tiap 2 detik biar keliatan "hidup".
-Untuk simulasi device OFFLINE (uji auto-reconnect), tinggal
-tekan Ctrl+C buat matiin program ini, lalu jalankan lagi nanti.
+Tiga register berurutan mulai dari alamat REGISTER:
+    +0 arus (Ampere x 100)   +1 tegangan (Volt x 10)   +2 daya (Watt)
+Nilainya diacak tiap 2 detik. Untuk simulasi device mati: Ctrl+C lalu jalankan lagi.
 """
 
 import asyncio
 import logging
 import random
+import sys
 
-from pymodbus.datastore import (
-    ModbusSequentialDataBlock,
-    ModbusServerContext,
-    ModbusSlaveContext,
-)
+from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, ModbusSlaveContext
 from pymodbus.server import StartAsyncTcpServer
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("mock_power_meter")
-
 HOST = "127.0.0.1"
-PORT = 5020  # sengaja BUKAN 502 (default Modbus), biar tidak perlu izin admin di Windows
 
 
-def build_context() -> ModbusServerContext:
-    """Siapkan data register awal (nilai default sebelum di-random)."""
-    block = ModbusSequentialDataBlock(0, [0] * 10)
-    slave_ctx = ModbusSlaveContext(hr=block)
-    return ModbusServerContext(slaves=slave_ctx, single=True)
+def parse(spec: str) -> tuple[int, int, int]:
+    port, unit, register = (int(x) for x in spec.split(":"))
+    return port, unit, register
 
 
-async def randomizer(context: ModbusServerContext):
-    """Update nilai register tiap 2 detik supaya datanya 'hidup'."""
-    slave_ctx = context[0]
-    while True:
-        arus = random.uniform(4.0, 16.0)          # 4 - 16 Ampere
-        tegangan = random.uniform(215.0, 225.0)    # 215 - 225 Volt
-        daya = arus * tegangan                     # P = V x I (Watt)
+async def run_device(port: int, unit: int, register: int):
+    slave = ModbusSlaveContext(hr=ModbusSequentialDataBlock(0, [0] * (register + 10)))
+    context = ModbusServerContext(slaves={unit: slave}, single=False)
 
-        slave_ctx.setValues(3, 0, [int(arus * 100)])       # register 0
-        slave_ctx.setValues(3, 1, [int(tegangan * 10)])    # register 1
-        slave_ctx.setValues(3, 2, [int(daya)])              # register 2
+    async def randomizer():
+        while True:
+            arus = random.uniform(4.0, 16.0)
+            tegangan = random.uniform(215.0, 225.0)
+            slave.setValues(3, register, [int(arus * 100), int(tegangan * 10), int(arus * tegangan)])
+            await asyncio.sleep(2)
 
-        log.info(
-            "Update register -> arus=%.2fA tegangan=%.1fV daya=%.1fW",
-            arus, tegangan, daya,
-        )
-        await asyncio.sleep(2)
+    asyncio.create_task(randomizer())
+    print(f"Device mock jalan di {HOST}:{port}  (Virtual ID {unit}, register {register})", flush=True)
+    await StartAsyncTcpServer(context=context, address=(HOST, port))
 
 
-async def main():
-    context = build_context()
-    log.info("Mock Power Meter jalan di %s:%s (Ctrl+C untuk stop)", HOST, PORT)
-
-    # Jalankan randomizer di background, server di foreground
-    asyncio.create_task(randomizer(context))
-    await StartAsyncTcpServer(context=context, address=(HOST, PORT))
+async def main(specs: list[str]):
+    devices = [parse(s) for s in specs] or [(5020, 1, 0)]
+    print("Tekan Ctrl+C untuk menghentikan semua device.", flush=True)
+    await asyncio.gather(*(run_device(*d) for d in devices))
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(main(sys.argv[1:]))
     except KeyboardInterrupt:
-        log.info("Mock Power Meter dihentikan.")
+        print("Device mock dihentikan.")
+    except ValueError:
+        sys.exit("Format salah. Contoh: python mock_power_meter.py 5021:1:0 5022:2:10")

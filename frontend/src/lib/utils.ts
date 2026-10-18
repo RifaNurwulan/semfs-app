@@ -32,3 +32,17 @@ export function formatRelative(iso: string, now = new Date()): string {
   if (abs < 86400 * 30) return relative.format(Math.round(seconds / 86400), 'day')
   return formatDate(iso)
 }
+
+export function formatDateTime(iso: string) {
+  return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Jakarta' }).format(new Date(iso))
+}
+
+/** Simpan teks/Blob sebagai file unduhan di browser. */
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
