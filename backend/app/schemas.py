@@ -136,6 +136,37 @@ class DeviceOut(BaseModel):
     uptime_24h: Optional[float] = None  # persen, None = belum pernah terhubung
 
 
+class MonitoringPoint(BaseModel):
+    time: datetime
+    avg_power_w: Optional[float] = None
+    avg_current_a: Optional[float] = None
+    avg_voltage_v: Optional[float] = None
+    peak_power_w: Optional[float] = None
+    sample_count: int
+
+
+class MonitoringDeviceReading(BaseModel):
+    device_id: str
+    device_name: Optional[str] = None
+    location: Optional[str] = None
+    status: Literal["online", "offline", "error"]
+    enabled: bool
+    time: Optional[datetime] = None
+    arus: Optional[float] = None
+    tegangan: Optional[float] = None
+    daya: Optional[float] = None
+    energy: Optional[float] = None
+
+
+class MonitoringSummary(BaseModel):
+    period: Literal["1h", "24h", "7d"]
+    total_energy_kwh: float
+    avg_power_w: float
+    peak_power_w: float
+    points: list[MonitoringPoint]
+    devices: list[MonitoringDeviceReading]
+
+
 class ProbeResult(BaseModel):
     ok: bool
     message: str

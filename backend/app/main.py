@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
 from .database import get_db
-from .routes import auth, devices, maintenance, notifications, support, users
+from .routes import auth, devices, maintenance, monitoring, notifications, support, users
 
 app = FastAPI(title="SEMF API", version="0.1.0")
 
@@ -32,6 +32,7 @@ app.include_router(users.router)
 app.include_router(notifications.router)
 app.include_router(support.router)
 app.include_router(devices.router)
+app.include_router(monitoring.router)
 app.include_router(maintenance.router)
 
 

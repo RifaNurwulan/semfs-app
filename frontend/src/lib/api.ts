@@ -87,6 +87,39 @@ export interface DevicePayload {
   enabled: boolean
 }
 
+export type MonitoringPeriod = '1h' | '24h' | '7d'
+
+export interface MonitoringPoint {
+  time: string
+  avg_power_w: number | null
+  avg_current_a: number | null
+  avg_voltage_v: number | null
+  peak_power_w: number | null
+  sample_count: number
+}
+
+export interface MonitoringDeviceReading {
+  device_id: string
+  device_name: string | null
+  location: string | null
+  status: DeviceStatus
+  enabled: boolean
+  time: string | null
+  arus: number | null
+  tegangan: number | null
+  daya: number | null
+  energy: number | null
+}
+
+export interface MonitoringSummary {
+  period: MonitoringPeriod
+  total_energy_kwh: number
+  avg_power_w: number
+  peak_power_w: number
+  points: MonitoringPoint[]
+  devices: MonitoringDeviceReading[]
+}
+
 export interface ProbeResult {
   ok: boolean
   message: string
@@ -205,6 +238,11 @@ export const api = {
     request<User>(`/users/${id}/role`, { method: 'PATCH', body: { role }, token }),
 
   listDevices: (token: string) => request<Device[]>('/devices', { token }),
+  monitoringSummary: (token: string, period: MonitoringPeriod, deviceId?: string) => {
+    const query = new URLSearchParams({ period })
+    if (deviceId) query.set('device_id', deviceId)
+    return request<MonitoringSummary>(`/monitoring/summary?${query}`, { token })
+  },
   createDevice: (token: string, payload: DevicePayload & { device_id: string }) =>
     request<Device>('/devices', { method: 'POST', body: payload, token }),
   updateDevice: (token: string, deviceId: string, payload: Partial<DevicePayload>) =>
