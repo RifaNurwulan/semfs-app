@@ -1,4 +1,4 @@
-"""..
+"""...
 schemas.py
 ----------
 Bentuk data yang masuk dan keluar dari API (divalidasi otomatis oleh Pydantic).
