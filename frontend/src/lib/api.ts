@@ -288,3 +288,4 @@ export const api = {
   markAllNotificationsRead: (token: string) =>
     request<{ message: string }>('/notifications/read-all', { method: 'POST', token }),
 }
+/**. */
