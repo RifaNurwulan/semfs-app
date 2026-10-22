@@ -177,7 +177,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 
 interface RequestOptions {
   method?: string
-  /** Body JSON */
+  /** Body JSON. */
   body?: unknown
   /** Body mentah (mis. file gambar). Content-Type diambil dari jenis file. */
   rawBody?: Blob
