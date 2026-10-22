@@ -15,7 +15,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import SupportPage from './pages/SupportPage'
 import UsersPage from './pages/UsersPage'
 
-/**..
+/**...
  * Peta halaman aplikasi. Hak akses per role diatur di src/lib/features.ts..
  * Saat halaman asli sudah jadi, ganti <PlaceholderPage feature="..." /> dengan halamannya,
  * misalnya <MonitoringPage />. Bungkus <RequireRole> jangan dihapus.

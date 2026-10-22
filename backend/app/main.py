@@ -1,4 +1,4 @@
-"""...
+"""..
 main.py
 -------
 Titik masuk aplikasi FastAPI.
