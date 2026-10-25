@@ -12,11 +12,12 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useUser } from '../../auth/auth-context'
+import { getToken } from '../../auth/tokenStorage'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { Alert } from '../../components/ui/alert'
 import { Button } from '../../components/ui/button'
 import { Card } from '../../components/ui/card'
-import { getToken } from '../../auth/tokenStorage'
 import { api, type MonitoringPeriod, type MonitoringSummary } from '../../lib/api'
 import { getFeature } from '../../lib/features'
 import { useDevices } from '../../lib/useDevices'
@@ -117,6 +118,7 @@ function metricCards(summary: MonitoringSummary, online: number, total: number) 
 
 /** Monitoring energi live dengan status perangkat dan notifikasi dari modul terkait. */
 export default function MonitoringEnergy() {
+	const user = useUser()
 	const feature = getFeature('monitoring')
 	const { devices: managedDevices } = useDevices()
 	const { items: notifications, enabled: notificationsEnabled, unreadCount } = useNotifications()
@@ -224,10 +226,10 @@ export default function MonitoringEnergy() {
 										<h2 className="font-semibold text-gray-900">Status perangkat</h2>
 										<p className="mt-1 text-sm text-gray-500">Sinkron dengan modul Maintenance</p>
 									</div>
-									<Link to="/maintenance" aria-label="Kelola perangkat" className="flex size-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-emerald-700"><ChevronRight className="size-5" aria-hidden /></Link>
+									{user.role === 'admin' && <Link to="/maintenance" aria-label="Kelola perangkat" className="flex size-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-emerald-700"><ChevronRight className="size-5" aria-hidden /></Link>}
 								</div>
 								<div className="mt-5 space-y-3">
-									{devices.length === 0 ? <p className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">Belum ada perangkat terdaftar.</p> : devices.slice(0, 5).map((device) => {
+									{managedDevices.length === 0 ? <p className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">Belum ada perangkat terdaftar.</p> : managedDevices.slice(0, 5).map((device) => {
 										const online = device.enabled && device.status === 'online'
 										const statusClass = !device.enabled ? 'bg-gray-100 text-gray-500' : online ? 'bg-emerald-50 text-emerald-700' : device.status === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'
 										const statusLabel = !device.enabled ? 'Nonaktif' : device.status === 'online' ? 'Online' : device.status === 'error' ? 'Error' : 'Offline'
@@ -240,7 +242,7 @@ export default function MonitoringEnergy() {
 										</div>
 									})}
 								</div>
-								<Link to="/maintenance" className="mt-4 flex items-center justify-center gap-1 rounded-xl bg-gray-50 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-emerald-50 hover:text-emerald-700">Buka Maintenance<ChevronRight className="size-4" aria-hidden /></Link>
+								{user.role === 'admin' && <Link to="/maintenance" className="mt-4 flex items-center justify-center gap-1 rounded-xl bg-gray-50 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-emerald-50 hover:text-emerald-700">Buka Maintenance<ChevronRight className="size-4" aria-hidden /></Link>}
 							</Card>
 						</div>
 
@@ -277,9 +279,9 @@ export default function MonitoringEnergy() {
 
 						<section aria-label="Tautan modul terkait" className="grid gap-3 sm:grid-cols-3">
 							{[
-								{ to: '/forecasting', title: 'Forecasting Energy', text: 'Lihat prediksi konsumsi', icon: ArrowUpRight, color: 'text-blue-600 bg-blue-50' },
-								{ to: '/ekspor', title: 'Ekspor & Laporan', text: 'Siapkan laporan energi', icon: Download, color: 'text-orange-600 bg-orange-50' },
-								{ to: '/maintenance', title: 'Maintenance', text: 'Kelola power meter', icon: Activity, color: 'text-rose-600 bg-rose-50' },
+								{ to: '/forecasting', title: 'Forecasting Energy', text: 'Lihat prediksi konsumsi', icon: ArrowUpRight, color: 'text-blue-600 bg-blue-50', roles: ['admin', 'operator', 'viewer'] },
+								{ to: '/ekspor', title: 'Ekspor & Laporan', text: 'Siapkan laporan energi', icon: Download, color: 'text-orange-600 bg-orange-50', roles: ['admin', 'operator', 'viewer'] },
+								...(user.role === 'admin' ? [{ to: '/maintenance', title: 'Maintenance', text: 'Kelola power meter', icon: Activity, color: 'text-rose-600 bg-rose-50', roles: ['admin'] }] : []),
 							].map(({ to, title, text, icon: Icon, color }) => <Link key={to} to={to} className="group flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md"><span className={`flex size-10 items-center justify-center rounded-xl ${color}`}><Icon className="size-5" aria-hidden /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-900">{title}</span><span className="mt-0.5 block text-xs text-gray-500">{text}</span></span><ChevronRight className="size-4 text-gray-400 transition group-hover:translate-x-0.5 group-hover:text-emerald-600" aria-hidden /></Link>)}
 						</section>
 					</>
