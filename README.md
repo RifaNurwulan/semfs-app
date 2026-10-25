@@ -214,4 +214,4 @@ Buka `http://localhost:5173` di browser.
 ## 6. Catatan keamanan
 
 - **Jangan pernah commit file `.env`** ke GitHub — sudah masuk `.gitignore`, tapi selalu double-check dengan `git status` sebelum push
-- Password dummy di panduan ini (`semfs2026`, dll) hanya contoh untuk development lokal — ganti dengan password sendiri
+- Password dummy di panduan ini (`semfs2026`, dll) hanya contoh untuk development lokal — ganti dengan password sendiri.
