@@ -15,7 +15,7 @@ export function MainHeader() {
 
   return (
     <header className="border-b border-gray-200 bg-white shadow-sm">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      <div className="flex w-full items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <Link to="/" className="flex items-center gap-3">
           <span className="flex size-11 items-center justify-center rounded-xl bg-emerald-600 text-white">
             <Zap className="size-5" aria-hidden />

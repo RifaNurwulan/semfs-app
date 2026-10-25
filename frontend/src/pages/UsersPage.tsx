@@ -45,7 +45,7 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen">
       <PageHeader icon={f.icon} iconClassName={f.headerIconBg} title={f.title} subtitle={f.subtitle} />
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+      <main className="w-full space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         {loadError && <Alert variant="error">{loadError}</Alert>}
         <UsersCard users={users} setUsers={setUsers} />
         <AddUserCard onCreated={(u) => setUsers((list) => (list ? [...list, u] : [u]))} />

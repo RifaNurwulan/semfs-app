@@ -23,7 +23,7 @@ export default function ProfilePage() {
         title="Edit Profil"
         subtitle="Kelola informasi akun dan keamanan Anda"
       />
-      <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
+      <main className="w-full space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <AvatarCard />
         <AccountCard />
         <PasswordCard />

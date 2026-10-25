@@ -21,7 +21,7 @@ export default function MaintenancePage() {
   return (
     <div className="min-h-screen">
       <PageHeader icon={f.icon} iconClassName={f.headerIconBg} title={f.title} subtitle={f.subtitle} />
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+      <main className="w-full space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div role="tablist" aria-label="Menu Maintenance" className="flex gap-1 overflow-x-auto border-b border-gray-200">
           {TABS.map((t) => (
             <button

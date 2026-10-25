@@ -157,7 +157,7 @@ export default function MonitoringEnergy() {
 	return (
 		<div className="min-h-screen">
 			<PageHeader icon={feature.icon} iconClassName={feature.headerIconBg} title={feature.title} subtitle={feature.subtitle} />
-			<main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
+			<main className="w-full space-y-6 px-4 py-8 sm:px-6 lg:px-8">
 				<section className="overflow-hidden rounded-2xl bg-linear-to-br from-slate-950 via-slate-900 to-emerald-950 p-6 text-white shadow-lg sm:p-8">
 					<div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
 						<div>

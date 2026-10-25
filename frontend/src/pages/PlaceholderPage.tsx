@@ -12,7 +12,7 @@ export default function PlaceholderPage({ feature }: { feature: FeatureKey }) {
   return (
     <div className="min-h-screen">
       <PageHeader icon={f.icon} iconClassName={f.headerIconBg} title={f.title} subtitle={f.subtitle} />
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <main className="w-full px-4 py-10 sm:px-6 lg:px-8">
         <Card className="flex flex-col items-center px-6 py-16 text-center">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-500">
             <Hammer className="size-7" aria-hidden />

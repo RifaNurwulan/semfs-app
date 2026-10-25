@@ -13,7 +13,7 @@ interface PageHeaderProps {
 export function PageHeader({ icon: Icon, iconClassName, title, subtitle }: PageHeaderProps) {
   return (
     <header className="border-b border-gray-200 bg-white shadow-sm">
-      <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-4 sm:px-6">
+      <div className="flex w-full items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <Link
           to="/"
           aria-label="Kembali ke Dashboard"
