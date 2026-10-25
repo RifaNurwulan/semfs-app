@@ -246,35 +246,37 @@ export default function MonitoringEnergy() {
 							</Card>
 						</div>
 
-						<div className="grid gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.8fr)]">
+						<div className={`grid gap-6 ${user.role === 'admin' || user.role === 'operator' ? 'lg:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.8fr)]' : 'lg:grid-cols-1'}`}>
 							<Card className="overflow-hidden">
 								<div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 sm:px-6">
 									<div><h2 className="font-semibold text-gray-900">Bacaan terakhir</h2><p className="mt-1 text-sm text-gray-500">Nilai terkini dari setiap power meter</p></div>
-									<span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">{devices.length} perangkat</span>
+									<span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">{managedDevices.length} perangkat</span>
 								</div>
 								<div className="overflow-x-auto">
 									<table className="w-full min-w-[38rem] text-left text-sm">
 										<thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500"><tr>{['Perangkat', 'Arus', 'Tegangan', 'Daya', 'Pembaruan'].map((heading) => <th key={heading} className="px-5 py-3 font-medium">{heading}</th>)}</tr></thead>
-										<tbody className="divide-y divide-gray-100">{devices.map((device) => <tr key={device.device_id}>
-											<td className="px-5 py-3.5"><span className="block font-medium text-gray-900">{device.device_name || device.device_id}</span><span className="text-xs text-gray-500">{device.device_id}</span></td>
-											<td className="px-5 py-3.5 text-gray-700">{device.arus == null ? '—' : `${number(device.arus, 2)} A`}</td>
-											<td className="px-5 py-3.5 text-gray-700">{device.tegangan == null ? '—' : `${number(device.tegangan, 1)} V`}</td>
-											<td className="px-5 py-3.5 font-medium text-gray-900">{device.daya == null ? '—' : `${number(device.daya)} W`}</td>
-											<td className="px-5 py-3.5 text-gray-500">{device.time ? formatRelative(device.time) : 'Belum ada data'}</td>
-										</tr>)}
-										{devices.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-500">Tidak ada perangkat untuk ditampilkan.</td></tr>}</tbody>
+									<tbody className="divide-y divide-gray-100">{managedDevices.map((device) => <tr key={device.device_id}>
+										<td className="px-5 py-3.5"><span className="block font-medium text-gray-900">{device.device_name || device.device_id}</span><span className="text-xs text-gray-500">{device.device_id}</span></td>
+										<td className="px-5 py-3.5 text-gray-700">{device.arus == null ? '—' : `${number(device.arus, 2)} A`}</td>
+										<td className="px-5 py-3.5 text-gray-700">{device.tegangan == null ? '—' : `${number(device.tegangan, 1)} V`}</td>
+										<td className="px-5 py-3.5 font-medium text-gray-900">{device.daya == null ? '—' : `${number(device.daya)} W`}</td>
+										<td className="px-5 py-3.5 text-gray-500">{device.time ? formatRelative(device.time) : 'Belum ada data'}</td>
+									</tr>)}
+									{managedDevices.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-500">Tidak ada perangkat untuk ditampilkan.</td></tr>}</tbody>
 									</table>
 								</div>
 							</Card>
 
-							<Card className="p-5 sm:p-6">
-								<div className="flex items-start justify-between gap-3">
-									<div><h2 className="font-semibold text-gray-900">Peringatan & notifikasi</h2><p className="mt-1 text-sm text-gray-500">Terhubung dengan modul Notifikasi</p></div>
-									<span className="relative flex size-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><Bell className="size-5" aria-hidden />{unreadCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}</span>
-								</div>
-								{notificationsEnabled ? recentNotifications.length ? <ul className="mt-4 divide-y divide-gray-100">{recentNotifications.map((item) => <li key={item.id} className="py-3 first:pt-0 last:pb-0"><div className="flex items-start justify-between gap-2"><p className={`text-sm ${item.read ? 'font-medium text-gray-700' : 'font-semibold text-gray-900'}`}>{item.title}</p><span className={`mt-1 size-2 shrink-0 rounded-full ${item.severity === 'critical' ? 'bg-rose-500' : item.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'}`} /></div><p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{item.message || item.device_id || 'Pemberitahuan sistem'}</p><p className="mt-1 text-[11px] text-gray-400">{formatRelative(item.created_at)}</p></li>)}</ul> : <div className="mt-4 rounded-xl bg-gray-50 px-4 py-8 text-center"><p className="text-sm font-medium text-gray-700">Tidak ada peringatan terbaru</p><p className="mt-1 text-xs text-gray-500">Notifikasi perangkat akan muncul di sini.</p></div> : <div className="mt-4 rounded-xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">Notifikasi tersedia untuk Admin dan Operator.</div>}
-								<Link to="/" className="mt-4 flex items-center justify-center gap-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Lihat dashboard<ChevronRight className="size-4" aria-hidden /></Link>
-							</Card>
+							{(user.role === 'admin' || user.role === 'operator') && (
+								<Card className="p-5 sm:p-6">
+									<div className="flex items-start justify-between gap-3">
+										<div><h2 className="font-semibold text-gray-900">Peringatan & notifikasi</h2><p className="mt-1 text-sm text-gray-500">Terhubung dengan modul Notifikasi</p></div>
+										<span className="relative flex size-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><Bell className="size-5" aria-hidden />{unreadCount > 0 && <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}</span>
+									</div>
+									{notificationsEnabled ? recentNotifications.length ? <ul className="mt-4 divide-y divide-gray-100">{recentNotifications.map((item) => <li key={item.id} className="py-3 first:pt-0 last:pb-0"><div className="flex items-start justify-between gap-2"><p className={`text-sm ${item.read ? 'font-medium text-gray-700' : 'font-semibold text-gray-900'}`}>{item.title}</p><span className={`mt-1 size-2 shrink-0 rounded-full ${item.severity === 'critical' ? 'bg-rose-500' : item.severity === 'warning' ? 'bg-amber-500' : 'bg-blue-500'}`} /></div><p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{item.message || item.device_id || 'Pemberitahuan sistem'}</p><p className="mt-1 text-[11px] text-gray-400">{formatRelative(item.created_at)}</p></li>)}</ul> : <div className="mt-4 rounded-xl bg-gray-50 px-4 py-8 text-center"><p className="text-sm font-medium text-gray-700">Tidak ada peringatan terbaru</p><p className="mt-1 text-xs text-gray-500">Notifikasi perangkat akan muncul di sini.</p></div> : null}
+									<Link to="/" className="mt-4 flex items-center justify-center gap-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Lihat dashboard<ChevronRight className="size-4" aria-hidden /></Link>
+								</Card>
+							)}
 						</div>
 
 						<section aria-label="Tautan modul terkait" className="grid gap-3 sm:grid-cols-3">
