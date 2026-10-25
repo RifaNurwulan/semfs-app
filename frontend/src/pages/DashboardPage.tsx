@@ -36,7 +36,17 @@ export default function DashboardPage() {
     { icon: Zap, iconClass: 'bg-emerald-100 text-emerald-600', value: devices ? `${onlineDevices}/${enabledDevices.length}` : '—', label: 'Perangkat Online', note: 'Status power meter' },
     { icon: TrendingUp, iconClass: 'bg-blue-100 text-blue-600', value: devices ? `${devices.length}` : '—', label: 'Total Perangkat', note: 'Terdaftar di sistem' },
     { icon: Battery, iconClass: 'bg-purple-100 text-purple-600', value: health.ok === null ? '...' : health.ok ? 'Normal' : 'Periksa', label: 'Kesehatan Sistem', note: 'API & database' },
-    { icon: CircleAlert, iconClass: 'bg-orange-100 text-orange-600', value: notificationsEnabled ? `${unreadCount} Alert` : '—', label: 'Notifikasi Aktif', note: notificationsEnabled ? 'Belum dibaca' : 'Khusus admin/operator' },
+    ...(user.role === 'admin' || user.role === 'operator'
+      ? [
+          {
+            icon: CircleAlert,
+            iconClass: 'bg-orange-100 text-orange-600',
+            value: notificationsEnabled ? `${unreadCount} Alert` : '—',
+            label: 'Notifikasi Aktif',
+            note: notificationsEnabled ? 'Belum dibaca' : '-',
+          },
+        ]
+      : []),
   ]
 
   return (
