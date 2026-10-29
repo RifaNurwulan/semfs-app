@@ -60,7 +60,9 @@ export function DevicesTab() {
       const r = await api.testDevice(token, d.device_id)
       setNotice({
         variant: r.ok ? 'success' : 'error',
-        text: r.ok ? `${d.device_id}: ${r.message}. Arus ${r.arus} A, tegangan ${r.tegangan} V, daya ${r.daya} W.` : `${d.device_id}: ${r.message}`,
+        text: r.ok
+          ? `${d.device_id}: ${r.message}. Status Online dan Last Sync diperbarui setelah modbus_reader.py berhasil membaca secara berkala${r.arus !== null && r.tegangan !== null && r.daya !== null ? `. Arus ${r.arus} A, tegangan ${r.tegangan} V, daya ${r.daya} W` : ''}.`
+          : `${d.device_id}: ${r.message}`,
       })
     } catch (err) {
       setNotice({ variant: 'error', text: err instanceof ApiError ? err.message : 'Uji koneksi gagal' })
@@ -160,7 +162,7 @@ export function DevicesTab() {
 
       <Alert variant="info">
         <strong className="block">Informasi</strong>
-        Pastikan IP Address unik untuk setiap device. Sistem akan otomatis mendeteksi status online/offline setiap 30 detik.
+        IP Address boleh sama. Jika IP dan port sama, gunakan Virtual ID berbeda. Edit device untuk mengatur parameter, satuan, jenis/format/panjang register, dan alamat sesuai manual meter. Status Online mengikuti pembacaan berkala oleh modbus_reader.py.
       </Alert>
 
       {dialog && (

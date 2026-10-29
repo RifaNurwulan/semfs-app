@@ -1,29 +1,34 @@
 import { useState } from 'react'
+import { useUser } from '../../auth/auth-context'
 import { PageHeader } from '../../components/layout/PageHeader'
 import { getFeature } from '../../lib/features'
 import { cn } from '../../lib/utils'
 import { AuditTab } from './AuditTab'
 import { BackupTab } from './BackupTab'
 import { DevicesTab } from './DevicesTab'
+import { EnergyTariffTab } from './EnergyTariffTab'
 
 const TABS = [
   { key: 'devices', label: 'Perangkat' },
   { key: 'audit', label: 'Log Aktivitas' },
   { key: 'backup', label: 'Backup & Restore' },
+  { key: 'tariff', label: 'Tarif Energi' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-/** Halaman Maintenance (khusus admin): kelola device, log aktivitas, backup/restore konfigurasi. */
+/** Operator mengelola tarif energi; admin juga dapat mengelola perangkat dan konfigurasi. */
 export default function MaintenancePage() {
   const f = getFeature('maintenance')
-  const [tab, setTab] = useState<TabKey>('devices')
+  const user = useUser()
+  const visibleTabs = user.role === 'admin' ? TABS : TABS.filter((item) => item.key === 'tariff')
+  const [tab, setTab] = useState<TabKey>(user.role === 'admin' ? 'devices' : 'tariff')
 
   return (
     <div className="min-h-screen">
       <PageHeader icon={f.icon} iconClassName={f.headerIconBg} title={f.title} subtitle={f.subtitle} />
       <main className="w-full space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <div role="tablist" aria-label="Menu Maintenance" className="flex gap-1 overflow-x-auto border-b border-gray-200">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.key}
               role="tab"
@@ -44,6 +49,7 @@ export default function MaintenancePage() {
           {tab === 'devices' && <DevicesTab />}
           {tab === 'audit' && <AuditTab />}
           {tab === 'backup' && <BackupTab />}
+          {tab === 'tariff' && <EnergyTariffTab />}
         </div>
       </main>
     </div>

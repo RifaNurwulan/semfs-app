@@ -19,13 +19,20 @@ import logging
 import os
 import signal
 import threading
-import time
 from datetime import datetime, timezone
 
 import psycopg2
 from dotenv import load_dotenv
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 from pymodbus.client import ModbusTcpClient
+
+from app.modbus_registers import (
+    DEFAULT_REGISTER_MAP,
+    MEASUREMENT_DB_COLUMNS,
+    MEASUREMENT_FIELDS,
+    register_config_from_map,
+    read_measurements,
+)
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -50,7 +57,8 @@ def load_configs() -> dict[str, dict]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT device_id, ip_address, port, virtual_id, register_address FROM power_meters "
+                "SELECT device_id, ip_address, port, virtual_id, register_address, register_map, register_config "
+                "FROM power_meters "
                 "WHERE enabled ORDER BY device_id"
             )
             return {r["device_id"]: r for r in cur.fetchall()}
@@ -59,7 +67,15 @@ def load_configs() -> dict[str, dict]:
 
 
 def fingerprint(cfg: dict) -> tuple:
-    return (cfg["ip_address"], cfg["port"], cfg["virtual_id"], cfg["register_address"])
+    return (
+        cfg["ip_address"], cfg["port"], cfg["virtual_id"],
+        tuple(
+            tuple(sorted(item.items()))
+            for item in (cfg.get("register_config") or register_config_from_map(
+                cfg.get("register_map") or DEFAULT_REGISTER_MAP
+            ))
+        ),
+    )
 
 
 class DeviceWorker(threading.Thread):
@@ -81,27 +97,21 @@ class DeviceWorker(threading.Thread):
                         (status, self.device_id, status))
         conn.commit()
 
-    def _last_energy(self, conn) -> float:
-        with conn.cursor() as cur:
-            cur.execute("SELECT energy FROM energy_readings WHERE device_id = %s ORDER BY time DESC LIMIT 1",
-                        (self.device_id,))
-            row = cur.fetchone()
-        conn.commit()
-        return float(row["energy"]) if row and row["energy"] is not None else 0.0
-
     def run(self):
         cfg = self.cfg
         unit = cfg["virtual_id"] if cfg["virtual_id"] is not None else 1
-        register = cfg["register_address"] or 0
-        conn, client, energy = None, None, 0.0
-        self.log.info("Mulai membaca %s:%s (Virtual ID %s, register %s)", cfg["ip_address"], cfg["port"], unit, register)
+        register_config = cfg.get("register_config") or register_config_from_map(
+            cfg.get("register_map") or DEFAULT_REGISTER_MAP
+        )
+        conn, client = None, None
+        self.log.info("Mulai membaca %s:%s (Virtual ID %s, %s parameter)",
+                      cfg["ip_address"], cfg["port"], unit, len(register_config))
 
         while not self.stop_event.is_set():
             wait = READ_INTERVAL
             try:
                 if conn is None or conn.closed:
                     conn = connect_db()
-                    energy = self._last_energy(conn)
 
                 if client is None:
                     client = ModbusTcpClient(cfg["ip_address"], port=cfg["port"], timeout=CONNECT_TIMEOUT)
@@ -113,27 +123,48 @@ class DeviceWorker(threading.Thread):
                         continue
                     self.log.info("Tersambung")
 
-                result = client.read_holding_registers(address=register, count=3, slave=unit)
-                if result.isError():
-                    # Tersambung tapi pembacaan ditolak: biasanya Virtual ID atau alamat register salah
-                    self._set_status(conn, "error")
-                    self.log.error("Pembacaan ditolak device: %s", result)
-                    client.close()
-                    client = None
-                    wait = RECONNECT_INTERVAL
-                else:
-                    arus, tegangan, daya = result.registers[0] / 100.0, result.registers[1] / 10.0, float(result.registers[2])
-                    energy += (daya / 1000.0) * (READ_INTERVAL / 3600.0)  # kWh
-                    ts = datetime.now(timezone.utc)
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "INSERT INTO energy_readings (time, device_id, arus, tegangan, daya, energy) "
-                            "VALUES (%s, %s, %s, %s, %s, %s)",
-                            (ts, self.device_id, arus, tegangan, daya, energy),
-                        )
-                    conn.commit()
-                    self.log.info("arus=%.2fA tegangan=%.1fV daya=%.0fW", arus, tegangan, daya)
+                measurements = read_measurements(client, unit, register_config)
+                currents = [measurements.get(f"i_{phase}_a") for phase in ("r", "s", "t")]
+                voltages = [measurements.get(f"v_{phase}n_v") for phase in ("r", "s", "t")]
+                arus = sum(currents) / 3 if all(value is not None for value in currents) else None
+                tegangan = sum(voltages) / 3 if all(value is not None for value in voltages) else None
+                daya = measurements["p_total_kw"] * 1000 if "p_total_kw" in measurements else None
+                columns = (
+                    "time", "device_id", "arus", "tegangan", "daya", "energy",
+                    *MEASUREMENT_DB_COLUMNS, "register_values",
+                )
+                values = (
+                    datetime.now(timezone.utc), self.device_id, arus, tegangan, daya,
+                    measurements.get("kwh_del"),
+                    *(measurements.get(field) for field in MEASUREMENT_FIELDS),
+                    Json(measurements),
+                )
+                placeholders = ", ".join(["%s"] * len(columns))
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"INSERT INTO energy_readings ({', '.join(columns)}) VALUES ({placeholders})",
+                        values,
+                    )
+                conn.commit()
+                self.log.info(
+                    "Pembacaan berhasil: %s parameter; arus=%sA tegangan=%sV daya=%sW",
+                    len(measurements), arus, tegangan, daya,
+                )
 
+            except ValueError as e:
+                self.log.error("Nilai register Modbus tidak valid: %s", e)
+                if conn is not None and not conn.closed:
+                    try:
+                        self._set_status(conn, "error")
+                    except psycopg2.Error as db_error:
+                        self.log.error("Tidak bisa memperbarui status device: %s",
+                                       str(db_error).strip().splitlines()[0])
+                        conn.close()
+                        conn = None
+                if client is not None:
+                    client.close()
+                client = None
+                wait = RECONNECT_INTERVAL
             except psycopg2.IntegrityError:
                 conn.rollback()
                 self.log.warning("Device sudah dihapus dari database, worker berhenti")

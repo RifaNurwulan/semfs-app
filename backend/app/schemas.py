@@ -5,15 +5,30 @@ Bentuk data yang masuk dan keluar dari API (divalidasi otomatis oleh Pydantic).
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictInt, field_validator, model_validator
+
+from .modbus_registers import (
+    DEFAULT_REGISTER_CONFIG,
+    DEFAULT_REGISTER_MAP,
+    register_config_from_map,
+    validate_register_config,
+    validate_register_map,
+)
 
 USERNAME_PATTERN = r"^[A-Za-z0-9_.-]+$"
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 Role = Literal["admin", "operator", "viewer"]
 Severity = Literal["info", "warning", "critical"]
+
+
+def check_modbus_unit_id(value: Optional[int]) -> Optional[int]:
+    if value is not None and not (1 <= value <= 247 or value == 255):
+        raise ValueError("Virtual ID harus 1-247 atau 255 untuk server TCP langsung")
+    return value
 
 
 def check_bcrypt_limit(value: Optional[str]) -> Optional[str]:
@@ -91,16 +106,70 @@ class SupportRequestOut(BaseModel):
     resolved_at: Optional[datetime] = None
 
 
+class MeterRegister(BaseModel):
+    key: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+    parameter: str = Field(..., min_length=1, max_length=100)
+    unit: str = Field("", max_length=30)
+    register_type: Literal["holding", "input"]
+    address: StrictInt = Field(..., ge=0, le=65535)
+    data_type: Literal["int16", "uint16", "int32", "uint32", "float32", "float64"]
+
+
+def _register_config_input(value):
+    if not isinstance(value, dict):
+        return value
+    if "register_config" in value:
+        value = value.copy()
+        value.pop("register_map", None)
+        return value
+    if "register_map" not in value:
+        return value
+    try:
+        register_config = register_config_from_map(value["register_map"])
+        value = value.copy()
+        value.pop("register_map")
+        value["register_config"] = register_config
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
 class DeviceBase(BaseModel):
     device_name: Optional[str] = Field(None, max_length=100)
     ip_address: str = Field(..., min_length=1, max_length=45)
     port: int = Field(502, ge=1, le=65535)
-    virtual_id: int = Field(1, ge=0, le=247)  # Modbus Unit/Slave ID
-    register_address: int = Field(0, ge=0, le=65535)  # alamat register pertama (arus, tegangan, daya berurutan)
+    virtual_id: int = Field(1, ge=1, le=255)  # Modbus slave IDs 1-247; 255 for direct TCP
+    register_config: list[MeterRegister] = Field(
+        default_factory=lambda: [MeterRegister(**entry) for entry in DEFAULT_REGISTER_CONFIG]
+    )
+    register_map: Optional[dict[str, StrictInt]] = None
     location: Optional[str] = Field(None, max_length=150)
     power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)  # batas daya (W) untuk notifikasi F-13
     enabled: bool = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_register_map(cls, value):
+        return _register_config_input(value)
+
+    @field_validator("register_config")
+    @classmethod
+    def _valid_register_config(cls, value):
+        return [MeterRegister(**entry) for entry in validate_register_config(
+            [item.model_dump() for item in value]
+        )]
+
+    @field_validator("register_map")
+    @classmethod
+    def _valid_legacy_register_map(cls, value):
+        if value is None:
+            raise ValueError("register_map tidak boleh kosong")
+        return validate_register_map(value)
+
+    @field_validator("virtual_id")
+    @classmethod
+    def _valid_virtual_id(cls, value):
+        return check_modbus_unit_id(value)
 
 class DeviceCreate(DeviceBase):
     device_id: str = Field(..., min_length=2, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
@@ -112,12 +181,38 @@ class DeviceUpdate(BaseModel):
     device_name: Optional[str] = Field(None, max_length=100)
     ip_address: Optional[str] = Field(None, min_length=1, max_length=45)
     port: Optional[int] = Field(None, ge=1, le=65535)
-    virtual_id: Optional[int] = Field(None, ge=0, le=247)
-    register_address: Optional[int] = Field(None, ge=0, le=65535)
+    virtual_id: Optional[int] = Field(None, ge=1, le=255)
+    register_config: Optional[list[MeterRegister]] = None
+    register_map: Optional[dict[str, StrictInt]] = None
     location: Optional[str] = Field(None, max_length=150)
     power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)
     enabled: Optional[bool] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_register_map(cls, value):
+        return _register_config_input(value)
+
+    @field_validator("register_config")
+    @classmethod
+    def _valid_register_config(cls, value):
+        if value is None:
+            raise ValueError("register_config tidak boleh kosong")
+        return [MeterRegister(**entry) for entry in validate_register_config(
+            [item.model_dump() for item in value]
+        )]
+
+    @field_validator("virtual_id")
+    @classmethod
+    def _valid_virtual_id(cls, value):
+        return check_modbus_unit_id(value)
+
+    @field_validator("register_map")
+    @classmethod
+    def _valid_register_map(cls, value):
+        if value is None:
+            raise ValueError("register_map tidak boleh kosong")
+        return validate_register_map(value)
 
 class DeviceOut(BaseModel):
     id: int
@@ -127,6 +222,10 @@ class DeviceOut(BaseModel):
     port: int
     virtual_id: Optional[int] = None
     register_address: Optional[int] = None
+    register_map: dict[str, int] = Field(default_factory=lambda: DEFAULT_REGISTER_MAP.copy())
+    register_config: list[MeterRegister] = Field(
+        default_factory=lambda: [MeterRegister(**entry) for entry in DEFAULT_REGISTER_CONFIG]
+    )
     location: Optional[str] = None
     status: Literal["online", "offline", "error"]
     last_seen_at: Optional[datetime] = None
@@ -142,7 +241,37 @@ class MonitoringPoint(BaseModel):
     avg_current_a: Optional[float] = None
     avg_voltage_v: Optional[float] = None
     peak_power_w: Optional[float] = None
+    avg_power_factor: Optional[float] = None
+    avg_metric_value: Optional[float] = None
+    peak_metric_value: Optional[float] = None
     sample_count: int
+
+
+class MonitoringDevicePoint(BaseModel):
+    device_id: str
+    device_name: Optional[str] = None
+    time: datetime
+    daya: Optional[float] = None
+    arus: Optional[float] = None
+    tegangan: Optional[float] = None
+    power_factor: Optional[float] = None
+    metric_value: Optional[float] = None
+
+
+class MonitoringDailyEnergyPoint(BaseModel):
+    time: datetime
+    energy_kwh: float
+
+
+class MonitoringDeviceDailyEnergyPoint(MonitoringDailyEnergyPoint):
+    device_id: str
+    device_name: Optional[str] = None
+
+
+class MonitoringDeviceConsumption(BaseModel):
+    device_id: str
+    device_name: Optional[str] = None
+    consumption_kwh: float
 
 
 class MonitoringDeviceReading(BaseModel):
@@ -156,15 +285,51 @@ class MonitoringDeviceReading(BaseModel):
     tegangan: Optional[float] = None
     daya: Optional[float] = None
     energy: Optional[float] = None
+    v_r_v: Optional[float] = None
+    v_s_v: Optional[float] = None
+    v_t_v: Optional[float] = None
+    v_rn_v: Optional[float] = None
+    v_sn_v: Optional[float] = None
+    v_tn_v: Optional[float] = None
+    i_r_a: Optional[float] = None
+    i_s_a: Optional[float] = None
+    i_t_a: Optional[float] = None
+    i_n_a: Optional[float] = None
+    p_total_kw: Optional[float] = None
+    q_total_kvar: Optional[float] = None
+    s_total_kva: Optional[float] = None
+    power_factor: Optional[float] = None
+    frequency_hz: Optional[float] = None
+    kwh_del: Optional[float] = None
+    kwh_rec: Optional[float] = None
+    kvarh_del: Optional[float] = None
+    kvarh_rec: Optional[float] = None
+    kvah_del: Optional[float] = None
+    register_values: Optional[dict[str, float]] = None
+    register_config: list[MeterRegister] = Field(default_factory=list)
 
 
 class MonitoringSummary(BaseModel):
-    period: Literal["1h", "24h", "7d"]
+    period: Literal["live", "1h", "24h", "7d", "custom"]
     total_energy_kwh: float
+    price_per_kwh: float
+    estimated_cost: float
     avg_power_w: float
     peak_power_w: float
     points: list[MonitoringPoint]
+    device_points: list[MonitoringDevicePoint] = Field(default_factory=list)
+    daily_energy: list[MonitoringDailyEnergyPoint] = Field(default_factory=list)
+    device_daily_energy: list[MonitoringDeviceDailyEnergyPoint] = Field(default_factory=list)
+    device_consumption: list[MonitoringDeviceConsumption] = Field(default_factory=list)
     devices: list[MonitoringDeviceReading]
+
+
+class EnergyTariffUpdate(BaseModel):
+    price_per_kwh: Decimal = Field(..., ge=0, max_digits=12, decimal_places=2)
+
+
+class EnergyTariffOut(BaseModel):
+    price_per_kwh: float
 
 
 class ProbeResult(BaseModel):

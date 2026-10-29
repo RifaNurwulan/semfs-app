@@ -58,6 +58,17 @@ export interface NewUserPayload {
 }
 
 export type DeviceStatus = 'online' | 'offline' | 'error'
+export type ModbusRegisterType = 'holding' | 'input'
+export type ModbusDataType = 'int16' | 'uint16' | 'int32' | 'uint32' | 'float32' | 'float64'
+
+export interface MeterRegister {
+  key: string
+  parameter: string
+  unit: string
+  register_type: ModbusRegisterType
+  address: number
+  data_type: ModbusDataType
+}
 
 export interface Device {
   id: number
@@ -67,6 +78,8 @@ export interface Device {
   port: number
   virtual_id: number | null
   register_address: number | null
+  register_map: Record<string, number>
+  register_config: MeterRegister[]
   location: string | null
   status: DeviceStatus
   last_seen_at: string | null
@@ -81,13 +94,13 @@ export interface DevicePayload {
   ip_address: string
   port: number
   virtual_id: number
-  register_address: number
+  register_config: MeterRegister[]
   location: string | null
   power_limit_w: number | null
   enabled: boolean
 }
 
-export type MonitoringPeriod = '1h' | '24h' | '7d'
+export type MonitoringPeriod = 'live' | '1h' | '24h' | '7d' | 'custom'
 
 export interface MonitoringPoint {
   time: string
@@ -95,7 +108,37 @@ export interface MonitoringPoint {
   avg_current_a: number | null
   avg_voltage_v: number | null
   peak_power_w: number | null
+  avg_power_factor: number | null
+  avg_metric_value: number | null
+  peak_metric_value: number | null
   sample_count: number
+}
+
+export interface MonitoringDevicePoint {
+  device_id: string
+  device_name: string | null
+  time: string
+  daya: number | null
+  arus: number | null
+  tegangan: number | null
+  power_factor: number | null
+  metric_value: number | null
+}
+
+export interface MonitoringDailyEnergyPoint {
+  time: string
+  energy_kwh: number
+}
+
+export interface MonitoringDeviceDailyEnergyPoint extends MonitoringDailyEnergyPoint {
+  device_id: string
+  device_name: string | null
+}
+
+export interface MonitoringDeviceConsumption {
+  device_id: string
+  device_name: string | null
+  consumption_kwh: number
 }
 
 export interface MonitoringDeviceReading {
@@ -109,15 +152,47 @@ export interface MonitoringDeviceReading {
   tegangan: number | null
   daya: number | null
   energy: number | null
+  v_r_v: number | null
+  v_s_v: number | null
+  v_t_v: number | null
+  v_rn_v: number | null
+  v_sn_v: number | null
+  v_tn_v: number | null
+  i_r_a: number | null
+  i_s_a: number | null
+  i_t_a: number | null
+  i_n_a: number | null
+  p_total_kw: number | null
+  q_total_kvar: number | null
+  s_total_kva: number | null
+  power_factor: number | null
+  frequency_hz: number | null
+  kwh_del: number | null
+  kwh_rec: number | null
+  kvarh_del: number | null
+  kvarh_rec: number | null
+  kvah_del: number | null
+  register_values: Record<string, number> | null
+  register_config: MeterRegister[]
 }
 
 export interface MonitoringSummary {
   period: MonitoringPeriod
   total_energy_kwh: number
+  price_per_kwh: number
+  estimated_cost: number
   avg_power_w: number
   peak_power_w: number
   points: MonitoringPoint[]
+  device_points: MonitoringDevicePoint[]
+  daily_energy: MonitoringDailyEnergyPoint[]
+  device_daily_energy: MonitoringDeviceDailyEnergyPoint[]
+  device_consumption: MonitoringDeviceConsumption[]
   devices: MonitoringDeviceReading[]
+}
+
+export interface EnergyTariff {
+  price_per_kwh: number
 }
 
 export interface ProbeResult {
@@ -238,9 +313,19 @@ export const api = {
     request<User>(`/users/${id}/role`, { method: 'PATCH', body: { role }, token }),
 
   listDevices: (token: string) => request<Device[]>('/devices', { token }),
-  monitoringSummary: (token: string, period: MonitoringPeriod, deviceId?: string) => {
+  monitoringSummary: (
+    token: string,
+    period: MonitoringPeriod,
+    deviceId?: string,
+    startTime?: string,
+    endTime?: string,
+    metricKey = 'daya',
+  ) => {
     const query = new URLSearchParams({ period })
     if (deviceId) query.set('device_id', deviceId)
+    if (startTime) query.set('start_time', startTime)
+    if (endTime) query.set('end_time', endTime)
+    query.set('metric_key', metricKey)
     return request<MonitoringSummary>(`/monitoring/summary?${query}`, { token })
   },
   createDevice: (token: string, payload: DevicePayload & { device_id: string }) =>
@@ -258,6 +343,13 @@ export const api = {
     if (opts.action) q.set('action', opts.action)
     return request<AuditLogList>(`/maintenance/audit-logs?${q}`, { token })
   },
+  energyTariff: (token: string) => request<EnergyTariff>('/maintenance/energy-tariff', { token }),
+  updateEnergyTariff: (token: string, pricePerKwh: number) =>
+    request<EnergyTariff>('/maintenance/energy-tariff', {
+      method: 'PUT',
+      body: { price_per_kwh: pricePerKwh },
+      token,
+    }),
   backupConfig: (token: string) => request<Blob>('/maintenance/backup', { token, responseType: 'blob' }),
   restoreConfig: (token: string, file: Blob) =>
     request<RestoreResult>('/maintenance/restore', { method: 'POST', rawBody: file, token }),

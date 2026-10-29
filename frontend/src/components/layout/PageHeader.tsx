@@ -7,12 +7,13 @@ interface PageHeaderProps {
   iconClassName: string
   title: string
   subtitle: string
+  className?: string
 }
 
 /** Header halaman fitur: tombol kembali + ikon berwarna + judul (sesuai rancangan). */
-export function PageHeader({ icon: Icon, iconClassName, title, subtitle }: PageHeaderProps) {
+export function PageHeader({ icon: Icon, iconClassName, title, subtitle, className }: PageHeaderProps) {
   return (
-    <header className="border-b border-gray-200 bg-white shadow-sm">
+    <header className={cn('border-b border-gray-200 bg-white shadow-sm', className)}>
       <div className="flex w-full items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <Link
           to="/"

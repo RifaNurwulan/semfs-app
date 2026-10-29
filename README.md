@@ -101,9 +101,17 @@ psql -U postgres -d semfs_db -f backend/database/triggers/002_triggers_views.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/003_sample_data.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/004_notifications_avatar.sql
 psql -U postgres -d semfs_db -f backend/database/migrations/005_devices_alerts_audit.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/006_energy_readings_metrics.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/007_system_settings.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/008_missing_tables.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/009_power_meter_measurements.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/010_power_meter_register_maps.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/011_configurable_modbus_parameters.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/012_energy_readings_frequency.sql
+psql -U postgres -d semfs_db -f backend/database/migrations/013_energy_tariff.sql
 ```
 
-(`004` menambah notifikasi, foto profil, dan pesan support. `005` menambah batas daya per device, log aktivitas, dan trigger notifikasi batas konsumsi. Keduanya aman dijalankan berulang.)
+Jalankan juga migration `006`-`013` berurutan; `009` menambahkan kolom pengukuran tiga fasa, `010` menambahkan peta alamat lama, `011` menyimpan konfigurasi parameter serta hasil pembacaan per meter, `012` menambahkan kolom frekuensi yang dipakai reader, dan `013` menambahkan tarif listrik per kWh untuk estimasi biaya. Migration `004`-`013` aman dijalankan berulang.
 
 Verifikasi:
 ```powershell
@@ -144,20 +152,36 @@ JWT_SECRET=<isi_string_rahasia_bebas>
 
 ### Membaca data device (Modbus) -- paralel, konfigurasi dari database
 
-Konfigurasi device (IP, port, Virtual ID, alamat register, batas daya) diatur admin di halaman **Maintenance**.
+Konfigurasi device (IP, port, Virtual ID, parameter, satuan, jenis register, format/panjang data, alamat register, dan batas daya) diatur admin di halaman **Maintenance**.
 `modbus_reader.py` membaca semua device aktif dari database secara paralel; perubahan konfigurasi terdeteksi otomatis (tanpa restart).
+
+Konfigurasi di Maintenance dapat menunjuk ke IP meter asli atau ke simulator di bawah ini. Alamat `localhost` dinormalisasi menjadi `127.0.0.1` dan menunjuk ke komputer tempat `modbus_reader.py` berjalan. Simulator menerima koneksi melalui `localhost`, `127.0.0.1`, maupun alamat IP jaringan laptop.
 
 Tanpa alat asli, pakai simulator. Buka 2 terminal (keduanya venv aktif, di folder `backend`):
 
 ```powershell
-# Terminal 1: 3 device palsu. Format PORT:VIRTUAL_ID:REGISTER
-python mock_power_meter.py 5021:1:0 5022:2:10 5023:3:100
+# Terminal 1: 3 meter (PM-001..PM-003) berbagi port standar 502
+python mock_power_meter.py
 
 # Terminal 2: pembaca data
 python modbus_reader.py
 ```
 
-Lalu di Maintenance, ubah PM-001..PM-003 menjadi IP `127.0.0.1` dengan port/Virtual ID/register sesuai di atas, dan klik tombol **Uji koneksi**.
+Default simulator membuat tiga meter pada `0.0.0.0:502`: Virtual ID `1`, `2`, dan `3`, semua mulai dari alamat register `0`. Beban, arus, tegangan, faktor daya, dan frekuensi berubah bertahap dengan pola waktu serta variasi kecil yang saling berkaitan; nilai energi merupakan totalizer yang terus bertambah selama simulator hidup. Di Maintenance, atur PM-001..PM-003 ke IP `localhost` (atau IP laptop), port `502`, Virtual ID `1`/`2`/`3`, dan register `0`. IP Address boleh sama untuk banyak device. Hanya jika IP dan port keduanya sama, Virtual ID harus berbeda; port atau ID yang berbeda dapat dipakai pada IP yang sama. ID `1`-`247` digunakan untuk meter/gateway; `255` dapat dipakai untuk server TCP langsung. ID `0` (broadcast) dan `248`-`254` dicadangkan. Simulator listen pada semua interface jaringan; gunakan hanya pada jaringan tepercaya dan pastikan firewall membatasi akses. Jika port `502` tidak dapat dibuka di Windows, jalankan terminal dengan hak administrator atau pilih port lain.
+
+Edit device untuk mengubah, menambah, atau menghapus parameter. Untuk tiap parameter isi nama, satuan, Holding/Input Register, format data (`int16`, `uint16`, `int32`, `uint32`, `float32`, atau `float64`), dan alamat awal. Panjang otomatis mengikuti format (1, 2, atau 4 register); alamat PDU berbasis nol dan rentang parameter tidak boleh bertumpang tindih pada jenis register yang sama. Nilai awal tabel tetap cocok dengan simulator: 20 parameter float32 big-endian pada Holding Register, mulai dari alamat `0` sampai `38`. Simulator mengubah bacaan setiap dua detik dengan pola beban yang halus dan nilai fasa yang saling konsisten, bukan nilai tetap atau lonjakan acak independen. Total energi berjalan sejak simulator dijalankan dan akan mulai lagi dari nol jika proses simulator dimulai ulang.
+
+| Offset | Tag | Satuan |
+|---:|---|---|
+| 0, 2, 4 | V_R (V_L1), V_S (V_L2), V_T (V_L3) | V |
+| 6, 8, 10 | V_RN (V_L1N), V_SN (V_L2N), V_TN (V_L3N) | V |
+| 12, 14, 16, 18 | I_R (I_L1), I_S (I_L2), I_T (I_L3), I_N | A |
+| 20, 22, 24 | P_Total (kW_Total), Q_Total (kVAR_Total), S_Total (kVA_Total) | kW, kVAR, kVA |
+| 26, 28 | PF (Power_Factor), Freq (Frequency) | rasio, Hz |
+| 30, 32, 34, 36, 38 | kWh_Del (E_Act_Del / Import), kWh_Rec (E_Act_Rec / Export), kVARh_Del (E_React_Del), kVARh_Rec (E_React_Rec), kVAh_Del (E_App_Del) | kWh, kWh, kVARh, kVARh, kVAh |
+
+Alamat register mengikuti alamat PDU Modbus berbasis nol. Contoh menjalankan dua meter di port sama tetapi port register awal berbeda: `python mock_power_meter.py 502:1:0 502:2:100`.
+Gunakan tombol **Uji koneksi** untuk memastikan koneksi dan pembacaan register sesaat. Status **Online** dan Last Sync diperbarui oleh proses `modbus_reader.py` hanya setelah pembacaan berkala berhasil disimpan; jika tes koneksi berhasil tetapi status tetap Offline atau Last Sync lama, jalankan/restart pembaca data di Terminal 2 dan periksa log terminal tersebut.
 Matikan simulator untuk melihat status berubah offline + notifikasi. Isi **Batas daya** kecil (mis. 100 W) untuk melihat notifikasi batas konsumsi.
 
 ### Menjalankan API (login, akun, notifikasi, support)

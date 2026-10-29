@@ -19,20 +19,30 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from psycopg2 import errors
+from psycopg2.extras import Json
 
 from ..audit import record
 from ..database import get_db
 from ..deps import get_current_user, require_roles
 from ..schemas import DeviceCreate, DeviceOut, DeviceUpdate, MessageResponse, ProbeResult
+from ..modbus_registers import (
+    DEFAULT_REGISTER_CONFIG,
+    DEFAULT_REGISTER_MAP,
+    register_config_from_map,
+    read_measurements,
+    register_map_from_config,
+)
 
 router = APIRouter(prefix="/devices", tags=["Perangkat"])
 
-COLS = ("id, device_id, device_name, ip_address, port, virtual_id, register_address, location, "
-        "status, last_seen_at, enabled, power_limit_w, created_at")
+COLS = ("id, device_id, device_name, ip_address, port, virtual_id, register_address, register_map, "
+        "register_config, location, status, last_seen_at, enabled, power_limit_w, created_at")
 
 
 def check_ip(value: str) -> str:
-    """Pesan sesuai SRS (alternative flow Maintenance): 'Format IP Invalid'."""
+    """Normalize IPv4/IPv6 literals and accept localhost as the reader's loopback."""
+    if value.strip().casefold() == "localhost":
+        return "127.0.0.1"
     try:
         return str(ipaddress.ip_address(value.strip()))
     except ValueError:
@@ -81,6 +91,7 @@ def _with_uptime(conn, rows: list[dict]) -> list[dict]:
 
 
 def _conflict_endpoint(cur, ip: str, port: int, unit: int | None, exclude: str | None = None):
+    """Only the complete Modbus endpoint must be unique; IP addresses may be shared."""
     cur.execute(
         "SELECT device_id FROM power_meters WHERE ip_address = %s AND port = %s AND virtual_id IS NOT DISTINCT FROM %s "
         "AND (%s::text IS NULL OR device_id <> %s)",
@@ -88,7 +99,10 @@ def _conflict_endpoint(cur, ip: str, port: int, unit: int | None, exclude: str |
     )
     other = cur.fetchone()
     if other:
-        raise HTTPException(status_code=409, detail=f"IP Address, port, dan Virtual ID sudah dipakai device {other['device_id']}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Kombinasi IP Address, port, dan Virtual ID sudah dipakai device {other['device_id']}",
+        )
 
 
 @router.get("", response_model=list[DeviceOut])
@@ -107,13 +121,16 @@ def create_device(body: DeviceCreate, request: Request, admin=Depends(require_ro
             raise HTTPException(status_code=409, detail="Device ID sudah dipakai")
         _conflict_endpoint(cur, ip, body.port, body.virtual_id)
         try:
+            register_config = [item.model_dump() for item in body.register_config]
+            register_map = register_map_from_config(register_config)
             cur.execute(
                 f"""
                 INSERT INTO power_meters (device_id, device_name, ip_address, port, virtual_id, register_address,
-                                          location, power_limit_w, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {COLS}
+                                          register_map, register_config, location, power_limit_w, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {COLS}
                 """,
-                (body.device_id, body.device_name, ip, body.port, body.virtual_id, body.register_address,
+                (body.device_id, body.device_name, ip, body.port, body.virtual_id, min(register_map.values()),
+                 Json(register_map), Json(register_config),
                  body.location, body.power_limit_w, body.enabled),
             )
         except errors.UniqueViolation:
@@ -138,16 +155,36 @@ def update_device(device_id: str, body: DeviceUpdate, request: Request,
             if changes["ip_address"] is None:
                 raise HTTPException(status_code=422, detail="Format IP Invalid")
             changes["ip_address"] = check_ip(changes["ip_address"])
-        for required in ("port", "virtual_id", "register_address", "enabled"):
+        for required in ("port", "virtual_id", "enabled"):
             if required in changes and changes[required] is None:
                 raise HTTPException(status_code=422, detail=f"{required} tidak boleh kosong")
+        if "register_map" in changes and changes["register_map"] is None:
+            raise HTTPException(status_code=422, detail="register_map tidak boleh kosong")
         merged = {**cur_row, **changes}
+        if "register_config" in changes:
+            register_config = changes["register_config"]
+            register_map = register_map_from_config(register_config)
+            changes["register_config"] = Json(register_config)
+            changes["register_map"] = Json(register_map)
+            changes["register_address"] = min(register_map.values())
+        elif "register_map" in changes:
+            register_map = changes.pop("register_map")
+            register_config = [
+                {**entry, "address": register_map[entry["key"]]}
+                for entry in DEFAULT_REGISTER_CONFIG
+            ]
+            changes["register_config"] = Json(register_config)
+            changes["register_map"] = Json(register_map)
+            changes["register_address"] = min(register_map.values())
+        elif not cur_row.get("register_map"):
+            merged["register_map"] = DEFAULT_REGISTER_MAP.copy()
         _conflict_endpoint(cur, merged["ip_address"], merged["port"], merged["virtual_id"], exclude=device_id)
         if not changes:
             return _with_uptime(conn, [cur_row])[0]
         # Nama kolom berasal dari model Pydantic (bukan input mentah), nilai lewat parameter.
         sets = ", ".join(f"{k} = %s" for k in changes)
-        cur.execute(f"UPDATE power_meters SET {sets} WHERE device_id = %s RETURNING {COLS}", (*changes.values(), device_id))
+        values = tuple(changes.values())
+        cur.execute(f"UPDATE power_meters SET {sets} WHERE device_id = %s RETURNING {COLS}", (*values, device_id))
         row = cur.fetchone()
     record(conn, "device_update", user=admin, entity="device", entity_id=device_id, detail=", ".join(sorted(changes)), request=request)
     conn.commit()
@@ -191,11 +228,26 @@ def _probe(dev: dict) -> dict:
     try:
         if not client.connect():
             return {"ok": False, "message": f"Tidak dapat terhubung ke {dev['ip_address']}:{dev['port']}"}
-        res = client.read_holding_registers(address=dev["register_address"] or 0, count=3, slave=dev["virtual_id"] if dev["virtual_id"] is not None else 1)
-        if res.isError():
-            return {"ok": False, "message": "Device terhubung, tetapi gagal membaca register. Periksa Virtual ID dan alamat register."}
-        r = res.registers
-        return {"ok": True, "message": "Koneksi berhasil", "arus": r[0] / 100, "tegangan": r[1] / 10, "daya": float(r[2])}
+        measurements = read_measurements(
+            client,
+            dev["virtual_id"] if dev["virtual_id"] is not None else 1,
+            dev.get("register_config") or register_config_from_map(
+                dev.get("register_map") or DEFAULT_REGISTER_MAP
+            ),
+        )
+        return {
+            "ok": True,
+            "message": "Koneksi berhasil",
+            "arus": sum(measurements[key] for key in ("i_r_a", "i_s_a", "i_t_a")
+                        if key in measurements) / 3
+                    if all(key in measurements for key in ("i_r_a", "i_s_a", "i_t_a")) else None,
+            "tegangan": sum(measurements[key] for key in ("v_rn_v", "v_sn_v", "v_tn_v")
+                            if key in measurements) / 3
+                        if all(key in measurements for key in ("v_rn_v", "v_sn_v", "v_tn_v")) else None,
+            "daya": measurements["p_total_kw"] * 1000 if "p_total_kw" in measurements else None,
+        }
+    except ValueError as e:
+        return {"ok": False, "message": f"Data register tidak valid: {e}"}
     except Exception as e:  # jaringan putus, timeout, dsb.
         return {"ok": False, "message": f"Koneksi gagal: {type(e).__name__}"}
     finally:

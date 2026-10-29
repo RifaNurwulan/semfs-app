@@ -19,11 +19,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
+from psycopg2.extras import Json
 
 from ..audit import record
 from ..database import get_db
-from ..deps import require_roles
-from ..schemas import AuditLogList, DeviceCreate, RestoreResult
+from ..deps import get_current_user, require_roles
+from ..modbus_registers import MEASUREMENT_FIELDS
+from ..schemas import AuditLogList, DeviceCreate, EnergyTariffOut, EnergyTariffUpdate, RestoreResult
 from .devices import check_ip
 
 router = APIRouter(prefix="/maintenance", tags=["Maintenance"])
@@ -32,7 +34,8 @@ FORMAT, VERSION = "semfs-config", 1
 MAX_BACKUP_BYTES = 1_000_000
 MAX_DEVICES = 500
 CONFIG_FIELDS = ("device_id", "device_name", "ip_address", "port", "virtual_id",
-                 "register_address", "location", "power_limit_w", "enabled")
+                 "register_address", "register_map", "register_config", "location",
+                 "power_limit_w", "enabled")
 
 
 def _checksum(body: dict) -> str:
@@ -66,6 +69,44 @@ def audit_logs(
     return {"items": items, "next_before_id": items[-1]["id"] if len(rows) > limit else None}
 
 
+@router.get("/energy-tariff", response_model=EnergyTariffOut)
+def get_energy_tariff(user=Depends(get_current_user), conn=Depends(get_db)):
+    with conn.cursor() as cur:
+        cur.execute("SELECT price_per_kwh FROM system_settings WHERE id = 1")
+        row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=503, detail="Pengaturan tarif belum tersedia. Jalankan migration terbaru.")
+    return row
+
+
+@router.put("/energy-tariff", response_model=EnergyTariffOut)
+def update_energy_tariff(
+    body: EnergyTariffUpdate,
+    request: Request,
+    user=Depends(require_roles("admin", "operator")),
+    conn=Depends(get_db),
+):
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE system_settings SET price_per_kwh = %s, updated_at = now() WHERE id = 1 "
+            "RETURNING price_per_kwh",
+            (body.price_per_kwh,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=503, detail="Pengaturan tarif belum tersedia. Jalankan migration terbaru.")
+    record(
+        conn,
+        "energy_tariff_update",
+        user=user,
+        entity="system_settings",
+        detail=f"Tarif energi diperbarui menjadi Rp {body.price_per_kwh}/kWh",
+        request=request,
+    )
+    conn.commit()
+    return row
+
+
 @router.get("/backup")
 def backup(request: Request, admin=Depends(require_roles("admin")), conn=Depends(get_db)):
     with conn.cursor() as cur:
@@ -96,11 +137,21 @@ def _apply_restore(conn, admin: dict, payload, request) -> dict:
     devices, seen = [], set()
     for raw in payload["devices"]:
         try:
+            device_data = {k: raw[k] for k in CONFIG_FIELDS if isinstance(raw, dict) and k in raw}
+            if isinstance(raw, dict) and "register_config" not in raw and "register_map" not in raw:
+                base_address = raw.get("register_address") or 0
+                device_data["register_map"] = {
+                    field: base_address + index * 2
+                    for index, field in enumerate(MEASUREMENT_FIELDS)
+                }
             # Nilai kosong untuk field berikut = pakai bawaan (Virtual ID 1, register 0, port 502, aktif).
             # Device sampel lama bisa punya Virtual ID/register kosong di database.
-            nullable_defaults = ("port", "virtual_id", "register_address", "enabled")
-            dev = DeviceCreate(**{k: raw[k] for k in CONFIG_FIELDS
-                                  if isinstance(raw, dict) and k in raw and not (k in nullable_defaults and raw[k] is None)})
+            nullable_defaults = ("port", "virtual_id", "register_address", "register_map",
+                                 "register_config", "enabled")
+            dev = DeviceCreate(**{
+                k: value for k, value in device_data.items()
+                if not (k in nullable_defaults and value is None)
+            })
         except (ValidationError, TypeError):
             name = raw.get("device_id") if isinstance(raw, dict) else "?"
             raise _corrupt(f"File Korup: data device tidak valid ({name})")
@@ -115,16 +166,23 @@ def _apply_restore(conn, admin: dict, payload, request) -> dict:
             cur.execute(
                 """
                 INSERT INTO power_meters (device_id, device_name, ip_address, port, virtual_id, register_address,
-                                          location, power_limit_w, enabled)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                          register_map, register_config, location, power_limit_w, enabled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name, ip_address = EXCLUDED.ip_address, port = EXCLUDED.port,
                     virtual_id = EXCLUDED.virtual_id, register_address = EXCLUDED.register_address,
-                    location = EXCLUDED.location, power_limit_w = EXCLUDED.power_limit_w, enabled = EXCLUDED.enabled
+                    register_map = EXCLUDED.register_map, register_config = EXCLUDED.register_config,
+                    location = EXCLUDED.location,
+                    power_limit_w = EXCLUDED.power_limit_w, enabled = EXCLUDED.enabled
                 RETURNING (xmax = 0) AS inserted
                 """,
-                (dev.device_id, dev.device_name, ip, dev.port, dev.virtual_id, dev.register_address,
-                 dev.location, dev.power_limit_w, dev.enabled),
+                (
+                    dev.device_id, dev.device_name, ip, dev.port, dev.virtual_id,
+                    min(item.address for item in dev.register_config),
+                    Json({item.key: item.address for item in dev.register_config}),
+                    Json([item.model_dump() for item in dev.register_config]),
+                    dev.location, dev.power_limit_w, dev.enabled,
+                ),
             )
             if cur.fetchone()["inserted"]:
                 created += 1
@@ -136,7 +194,14 @@ def _apply_restore(conn, admin: dict, payload, request) -> dict:
         dup = cur.fetchone()
         if dup:
             conn.rollback()
-            raise HTTPException(status_code=409, detail=f"Hasil pemulihan memuat IP/port/Virtual ID ganda ({dup['ip_address']}:{dup['port']}). Tidak ada yang diubah.")
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Hasil pemulihan memuat kombinasi IP/port/Virtual ID ganda "
+                    f"({dup['ip_address']}:{dup['port']}, ID {dup['virtual_id']}). "
+                    "IP yang sama boleh dipakai jika port atau Virtual ID berbeda. Tidak ada yang diubah."
+                ),
+            )
     record(conn, "config_restore", user=admin, entity="config", detail=f"{created} baru, {updated} diperbarui", request=request)
     conn.commit()
     return {"created": created, "updated": updated, "message": f"Pemulihan selesai: {created} device baru, {updated} diperbarui."}

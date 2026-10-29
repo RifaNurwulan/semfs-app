@@ -16,7 +16,7 @@ ON CONFLICT (device_id) DO NOTHING;
 -- ------------------------------------------------------------
 INSERT INTO users (username, email, password_hash, role)
 VALUES
-    ('admin_rifa',    'admin@semf.test',    'placeholder_hash_ganti_nanti', 'admin'),
+    ('admin',    'admin@semf.test',    'placeholder_hash_ganti_nanti', 'admin'),
     ('operator_demo', 'operator@semf.test', 'placeholder_hash_ganti_nanti', 'operator'),
     ('viewer_demo',   'viewer@semf.test',   'placeholder_hash_ganti_nanti', 'viewer')
 ON CONFLICT (username) DO NOTHING;
