@@ -12,6 +12,7 @@ import smtplib
 from email.message import EmailMessage
 
 from .config import (
+    EMAIL_VERIFICATION_EXPIRE_MINUTES,
     RESET_TOKEN_EXPIRE_MINUTES,
     SMTP_FROM,
     SMTP_HOST,
@@ -22,7 +23,7 @@ from .config import (
     SUPPORT_EMAIL,
 )
 
-# Memakai logger milik uvicorn supaya pesannya tampil di terminal yang sama
+
 log = logging.getLogger("uvicorn.error")
 
 
@@ -52,8 +53,41 @@ def send_reset_email(to_email: str, username: str, link: str) -> None:
             smtp.send_message(msg)
         log.info("Email reset password terkirim ke %s", to_email)
     except Exception:
-        # Dijalankan di background task: jangan sampai menjatuhkan server
+
         log.exception("Gagal mengirim email reset password ke %s", to_email)
+
+
+def send_verification_email(to_email: str, username: str, code: str) -> None:
+    if not SMTP_HOST:
+        log.warning(
+            "[MODE DEV - SMTP belum diatur] Kode OTP verifikasi email untuk %s: %s",
+            username,
+            code,
+        )
+        return
+
+    msg = EmailMessage()
+    msg["Subject"] = "Kode verifikasi email SEMFS"
+    msg["From"] = SMTP_FROM
+    msg["To"] = to_email
+    msg.set_content(
+        f"Halo {username},\n\n"
+        f"Kode OTP untuk memverifikasi email Anda adalah: {code}\n\n"
+        f"Kode ini berlaku {EMAIL_VERIFICATION_EXPIRE_MINUTES} menit. "
+        "Jangan bagikan kode ini kepada siapa pun.\n\n"
+        "Kalau Anda tidak mendaftar di SEMFS, abaikan email ini.\n"
+    )
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:
+            if SMTP_STARTTLS:
+                smtp.starttls()
+            if SMTP_USER:
+                smtp.login(SMTP_USER, SMTP_PASSWORD)
+            smtp.send_message(msg)
+        log.info("Kode OTP verifikasi email terkirim ke %s", to_email)
+    except Exception:
+        log.exception("Gagal mengirim kode OTP verifikasi email ke %s", to_email)
 
 
 def send_support_email(name: str, from_email: str, message: str) -> None:
@@ -67,7 +101,7 @@ def send_support_email(name: str, from_email: str, message: str) -> None:
     msg["Subject"] = "Pesan support SEMFS"
     msg["From"] = SMTP_FROM
     msg["To"] = to
-    msg["Reply-To"] = from_email  # sudah divalidasi: tanpa spasi/baris baru
+    msg["Reply-To"] = from_email
     msg.set_content(f"Dari: {name} <{from_email}>\n\n{message}\n")
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as smtp:

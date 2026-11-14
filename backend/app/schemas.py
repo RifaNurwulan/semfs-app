@@ -32,7 +32,7 @@ def check_modbus_unit_id(value: Optional[int]) -> Optional[int]:
 
 
 def check_bcrypt_limit(value: Optional[str]) -> Optional[str]:
-    # bcrypt hanya membaca 72 byte pertama, jadi tolak yang lebih panjang
+
     if value is not None and len(value.encode("utf-8")) > 72:
         raise ValueError("Password maksimal 72 byte")
     return value
@@ -57,7 +57,7 @@ class RegisterRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50, pattern=USERNAME_PATTERN)
     email: Optional[str] = Field(None, max_length=100, pattern=EMAIL_PATTERN)
-    current_password: Optional[str] = None  # wajib kalau mau ganti password
+    current_password: Optional[str] = None
     new_password: Optional[str] = Field(None, min_length=8, max_length=72)
 
     @field_validator("new_password")
@@ -78,6 +78,15 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def _new_password_limit(cls, v):
         return check_bcrypt_limit(v)
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str = Field(..., max_length=100, pattern=EMAIL_PATTERN)
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str = Field(..., max_length=100, pattern=EMAIL_PATTERN)
 
 
 class CreateUserRequest(RegisterRequest):
@@ -113,6 +122,9 @@ class MeterRegister(BaseModel):
     register_type: Literal["holding", "input"]
     address: StrictInt = Field(..., ge=0, le=65535)
     data_type: Literal["int16", "uint16", "int32", "uint32", "float32", "float64"]
+    byte_order: Literal["big", "little"] = "big"
+    word_order: Literal["big", "little"] = "big"
+    scale_factor: float = Field(1.0, allow_inf_nan=False)
 
 
 def _register_config_input(value):
@@ -138,13 +150,13 @@ class DeviceBase(BaseModel):
     device_name: Optional[str] = Field(None, max_length=100)
     ip_address: str = Field(..., min_length=1, max_length=45)
     port: int = Field(502, ge=1, le=65535)
-    virtual_id: int = Field(1, ge=1, le=255)  # Modbus slave IDs 1-247; 255 for direct TCP
+    virtual_id: int = Field(1, ge=1, le=255)
     register_config: list[MeterRegister] = Field(
         default_factory=lambda: [MeterRegister(**entry) for entry in DEFAULT_REGISTER_CONFIG]
     )
     register_map: Optional[dict[str, StrictInt]] = None
     location: Optional[str] = Field(None, max_length=150)
-    power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)  # batas daya (W) untuk notifikasi F-13
+    power_limit_w: Optional[float] = Field(None, gt=0, le=1e9)
     enabled: bool = True
 
     @model_validator(mode="before")
@@ -232,7 +244,7 @@ class DeviceOut(BaseModel):
     enabled: bool
     power_limit_w: Optional[float] = None
     created_at: datetime
-    uptime_24h: Optional[float] = None  # persen, None = belum pernah terhubung
+    uptime_24h: Optional[float] = None
 
 
 class MonitoringPoint(BaseModel):
@@ -332,6 +344,27 @@ class EnergyTariffOut(BaseModel):
     price_per_kwh: float
 
 
+class SystemSettingsUpdate(BaseModel):
+    timezone: Literal["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"]
+    language: Literal["id", "en"]
+    poll_interval_seconds: StrictInt = Field(..., ge=1, le=3600)
+
+
+class ForecastTrainingRequest(BaseModel):
+    device_id: str = Field(..., min_length=2, max_length=50)
+    horizon: int = Field(24, ge=1, le=720)
+    metric: Literal[
+        "energy",
+        "tegangan",
+        "arus",
+        "daya",
+        "frekuensi",
+        "power_factor",
+        "temperatur",
+        "efisiensi",
+    ] = "energy"
+
+
 class ProbeResult(BaseModel):
     ok: bool
     message: str
@@ -353,7 +386,7 @@ class AuditLogOut(BaseModel):
 
 class AuditLogList(BaseModel):
     items: list[AuditLogOut]
-    next_before_id: Optional[int] = None  # kirim sebagai before_id untuk halaman berikutnya
+    next_before_id: Optional[int] = None
 
 
 class RestoreResult(BaseModel):
@@ -379,7 +412,7 @@ class UserOut(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    expires_in: int  # detik
+    expires_in: int
     user: UserOut
 
 

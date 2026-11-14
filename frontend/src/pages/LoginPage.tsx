@@ -6,6 +6,7 @@ import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Field, Input } from '../components/ui/input'
 import { ApiError } from '../lib/api'
+import { useTranslation } from '../lib/i18n'
 
 const HIGHLIGHTS = [
   { icon: Activity, title: 'Real-time Monitoring', text: 'Pantau penggunaan energi listrik secara langsung' },
@@ -21,6 +22,7 @@ const STATS = [
 
 export default function LoginPage() {
   const { status, login } = useAuth()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const state = location.state as { from?: string; notice?: string } | null
@@ -37,8 +39,8 @@ export default function LoginPage() {
 
   if (status === 'authenticated') return <Navigate to={from} replace />
 
-  const identifierError = touched && !identifier.trim() ? 'Email atau username wajib diisi' : null
-  const passwordError = touched && !password ? 'Password wajib diisi' : null
+  const identifierError = touched && !identifier.trim() ? t('Email atau username wajib diisi') : null
+  const passwordError = touched && !password ? t('Password wajib diisi') : null
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -51,14 +53,24 @@ export default function LoginPage() {
       await login(identifier.trim(), password, remember)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Terjadi kesalahan. Coba lagi.')
+      if (err instanceof ApiError && err.status === 403) {
+        navigate('/verifikasi-email', {
+          replace: true,
+          state: {
+            email: identifier.includes('@') ? identifier.trim() : '',
+            notice: t(err.message),
+          },
+        })
+        return
+      }
+      setError(err instanceof ApiError ? t(err.message) : t('Terjadi kesalahan. Coba lagi.'))
       setSubmitting(false)
     }
   }
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Panel kiri: branding */}
+
       <aside className="relative hidden overflow-hidden bg-linear-to-br from-emerald-600 via-teal-600 to-cyan-700 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="pointer-events-none absolute -left-10 top-40 size-56 rounded-full border border-white/10" />
         <div className="pointer-events-none absolute -bottom-10 right-10 size-72 rounded-full border border-white/10" />
@@ -75,7 +87,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-16 max-w-lg text-2xl font-medium leading-snug">
-            Monitor konsumsi energi secara real-time dan prediksi kebutuhan masa depan dengan akurasi tinggi
+            {t('Monitor konsumsi energi secara real-time dan prediksi kebutuhan masa depan dengan akurasi tinggi')}
           </p>
 
           <ul className="mt-12 space-y-6">
@@ -85,8 +97,8 @@ export default function LoginPage() {
                   <Icon className="size-5" aria-hidden />
                 </span>
                 <div>
-                  <p className="font-semibold">{title}</p>
-                  <p className="text-sm text-white/80">{text}</p>
+                  <p className="font-semibold">{t(title)}</p>
+                  <p className="text-sm text-white/80">{t(text)}</p>
                 </div>
               </li>
             ))}
@@ -103,22 +115,22 @@ export default function LoginPage() {
         </div>
       </aside>
 
-      {/* Panel kanan: form */}
+
       <main className="flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl shadow-gray-200/70">
-          <h1 className="text-2xl font-semibold text-gray-900">Masuk ke Dashboard</h1>
-          <p className="mt-1 text-gray-500">Akses sistem monitoring dan forecasting energi Anda</p>
+          <h1 className="text-2xl font-semibold text-gray-900">{t('Masuk ke Dashboard')}</h1>
+          <p className="mt-1 text-gray-500">{t('Akses sistem monitoring dan forecasting energi Anda')}</p>
 
           <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
             {error && <Alert variant="error">{error}</Alert>}
             {notice && !error && <Alert variant="success">{notice}</Alert>}
 
-            <Field label="Email atau Username" htmlFor="identifier" error={identifierError}>
+            <Field label={t('Email atau Username')} htmlFor="identifier" error={identifierError}>
               <Input
                 id="identifier"
                 name="username"
                 autoComplete="username"
-                placeholder="nama@perusahaan.com"
+                placeholder={t('nama@perusahaan.com')}
                 icon={<Mail className="size-5" aria-hidden />}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -126,13 +138,13 @@ export default function LoginPage() {
               />
             </Field>
 
-            <Field label="Password" htmlFor="password" error={passwordError}>
+            <Field label={t('Password')} htmlFor="password" error={passwordError}>
               <Input
                 id="password"
                 name="password"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
-                placeholder="Masukkan password"
+                placeholder={t('Masukkan password')}
                 icon={<Lock className="size-5" aria-hidden />}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -141,7 +153,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    aria-label={showPassword ? t('Sembunyikan password') : t('Tampilkan password')}
                     className="flex size-9 items-center justify-center rounded-lg text-gray-400 hover:text-gray-600"
                   >
                     {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
@@ -158,34 +170,34 @@ export default function LoginPage() {
                   onChange={(e) => setRemember(e.target.checked)}
                   className="size-4 rounded border-gray-300 accent-emerald-600"
                 />
-                Ingat saya
+                {t('Ingat saya')}
               </label>
               <Link to="/lupa-password" className="font-medium text-emerald-600 hover:text-emerald-700">
-                Lupa password?
+                {t('Lupa password?')}
               </Link>
             </div>
 
             <Button type="submit" loading={submitting} className="w-full">
-              {submitting ? 'Memproses...' : 'Masuk ke Dashboard'}
+              {submitting ? t('Memproses...') : t('Masuk ke Dashboard')}
             </Button>
           </form>
 
           <p className="mt-5 text-center text-sm text-gray-600">
-            Belum punya akun?{' '}
+            {t('Belum punya akun?')}{' '}
             <Link to="/daftar" className="font-medium text-emerald-600 hover:text-emerald-700">
-              Daftar sekarang
+              {t('Daftar sekarang')}
             </Link>
           </p>
 
           <div className="mt-6 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             <Lock className="size-4" aria-hidden />
-            Sesi login diamankan dengan token JWT
+            {t('Sesi login diamankan dengan token JWT')}
           </div>
 
           <p className="mt-6 text-center text-sm text-gray-600">
-            Butuh bantuan?{' '}
+            {t('Butuh bantuan?')}{' '}
             <Link to="/bantuan" className="font-medium text-emerald-600 hover:text-emerald-700">
-              Hubungi Support
+              {t('Hubungi Support')}
             </Link>
           </p>
         </div>

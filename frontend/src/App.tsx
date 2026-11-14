@@ -3,23 +3,22 @@ import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireRole } from './auth/guards'
 import { NotificationProvider } from './notifications/NotificationProvider'
 import DashboardPage from './pages/DashboardPage'
+import ExportPage from './pages/ExportPage'
+import ForecastingPage from './pages/ForecastingPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import MaintenancePage from './pages/maintenance/MaintenancePage'
 import MonitoringEnergy from './pages/maintenance/MonitoringEnergy'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
-import PlaceholderPage from './pages/PlaceholderPage'
 import ProfilePage from './pages/ProfilePage'
+import SettingsPage from './pages/SettingsPage'
 import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SupportPage from './pages/SupportPage'
 import UsersPage from './pages/UsersPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 
-/**...
- * Peta halaman aplikasi. Hak akses per role diatur di src/lib/features.ts..
- * Saat halaman asli sudah jadi, ganti <PlaceholderPage feature="..." /> dengan halamannya,
- * misalnya <MonitoringPage />. Bungkus <RequireRole> jangan dihapus.
- */
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -28,6 +27,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/daftar" element={<RegisterPage />} />
+          <Route path="/verifikasi-email" element={<VerifyEmailPage />} />
           <Route path="/lupa-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/bantuan" element={<SupportPage />} />
@@ -48,7 +48,7 @@ export default function App() {
               path="forecasting"
               element={
                 <RequireRole feature="forecasting">
-                  <PlaceholderPage feature="forecasting" />
+                  <ForecastingPage />
                 </RequireRole>
               }
             />
@@ -56,7 +56,7 @@ export default function App() {
               path="ekspor"
               element={
                 <RequireRole feature="ekspor">
-                  <PlaceholderPage feature="ekspor" />
+                  <ExportPage />
                 </RequireRole>
               }
             />
@@ -64,7 +64,7 @@ export default function App() {
               path="pengaturan"
               element={
                 <RequireRole feature="pengaturan">
-                  <PlaceholderPage feature="pengaturan" />
+                  <SettingsPage />
                 </RequireRole>
               }
             />

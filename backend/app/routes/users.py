@@ -38,7 +38,11 @@ def create_user(body: CreateUserRequest, request: Request, admin=Depends(require
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{field} sudah dipakai akun lain")
         try:
             cur.execute(
-                f"INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s) RETURNING {USER_COLUMNS}",
+                f"""
+                INSERT INTO users (username, email, password_hash, role, email_verified_at)
+                VALUES (%s, %s, %s, %s, now())
+                RETURNING {USER_COLUMNS}
+                """,
                 (body.username, email, hash_password(body.password), body.role),
             )
         except errors.UniqueViolation:

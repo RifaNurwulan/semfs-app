@@ -68,6 +68,9 @@ export interface MeterRegister {
   register_type: ModbusRegisterType
   address: number
   data_type: ModbusDataType
+  byte_order: 'big' | 'little'
+  word_order: 'big' | 'little'
+  scale_factor: number
 }
 
 export interface Device {
@@ -195,6 +198,53 @@ export interface EnergyTariff {
   price_per_kwh: number
 }
 
+export interface SystemSettings {
+  timezone: 'Asia/Jakarta' | 'Asia/Makassar' | 'Asia/Jayapura' | 'UTC'
+  language: 'id' | 'en'
+  poll_interval_seconds: number
+  updated_at: string
+}
+
+export interface ForecastMetrics {
+  [model: string]: { mae: number; rmse: number; mape: number }
+}
+
+export interface ForecastResponse {
+  device_id: string
+  metric: string
+  model_used: string | null
+  metrics: ForecastMetrics | null
+  model_state: { name: string; parameters: Record<string, number> } | null
+  is_sample_data: boolean
+  training_data_source: 'database' | 'sample' | null
+  price_per_kwh: number
+  actual: { time: string; value: number }[]
+  predictions: {
+    forecast_time: string
+    predicted_value: number
+    confidence: number | null
+    model_used: string | null
+    generated_at: string
+  }[]
+}
+
+export interface AnomalyItem {
+  id: number
+  device_id: string
+  detected_at: string
+  anomaly_type: string | null
+  severity: 'low' | 'medium' | 'high'
+  description: string | null
+  is_notified: boolean
+}
+
+export interface TrainingStatus {
+  device_id: string
+  status: 'idle' | 'queued' | 'running' | 'completed' | 'failed'
+  error?: string | null
+  generated_at?: string
+}
+
 export interface ProbeResult {
   ok: boolean
   message: string
@@ -230,8 +280,8 @@ export interface NotificationList {
   unread_count: number
 }
 
-// Alamat API FastAPI. Ubah lewat file .env di folder frontend (VITE_API_URL).
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://127.0.0.1:8000'
+
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://127.0.0.1:8000'
 
 export class ApiError extends Error {
   status: number
@@ -243,8 +293,8 @@ export class ApiError extends Error {
   }
 }
 
-// Dipanggil kalau server menjawab 401 untuk request yang membawa token
-// (token kedaluwarsa / tidak valid) -> AuthProvider akan mengeluarkan user.
+
+
 let unauthorizedHandler: (() => void) | null = null
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler
@@ -252,9 +302,9 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 
 interface RequestOptions {
   method?: string
-  /** Body JSON. */
+
   body?: unknown
-  /** Body mentah (mis. file gambar). Content-Type diambil dari jenis file. */
+
   rawBody?: Blob
   token?: string | null
   responseType?: 'json' | 'blob'
@@ -306,6 +356,10 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
 
   register: (payload: NewUserPayload) => request<User>('/auth/register', { method: 'POST', body: payload }),
+  verifyEmail: (email: string, code: string) =>
+    request<{ message: string }>('/auth/verify-email', { method: 'POST', body: { email, code } }),
+  resendVerification: (email: string) =>
+    request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: { email } }),
   listUsers: (token: string) => request<User[]>('/users', { token }),
   createUser: (token: string, payload: NewUserPayload & { role: Role }) =>
     request<User>('/users', { method: 'POST', body: payload, token }),
@@ -327,6 +381,53 @@ export const api = {
     if (endTime) query.set('end_time', endTime)
     query.set('metric_key', metricKey)
     return request<MonitoringSummary>(`/monitoring/summary?${query}`, { token })
+  },
+  systemSettings: (token: string) => request<SystemSettings>('/settings', { token }),
+  updateSystemSettings: (
+    token: string,
+    settings: Pick<SystemSettings, 'timezone' | 'language' | 'poll_interval_seconds'>,
+  ) => request<SystemSettings>('/settings', { method: 'PUT', body: settings, token }),
+  forecast: (token: string, deviceId: string, horizon: number, metric: string) => {
+    const query = new URLSearchParams({ device_id: deviceId, horizon: String(horizon), metric })
+    return request<ForecastResponse>(`/forecasting?${query}`, { token })
+  },
+  requestForecastTraining: (token: string, deviceId: string, horizon: number, metric: string) =>
+    request<{ device_id: string; status: 'queued'; horizon: number; metric: string }>('/forecasting/train', {
+      method: 'POST',
+      body: { device_id: deviceId, horizon, metric },
+      token,
+    }),
+  forecastTrainingStatus: (token: string, deviceId: string, metric: string) =>
+    request<TrainingStatus>(`/forecasting/training/${encodeURIComponent(deviceId)}?metric=${encodeURIComponent(metric)}`, { token }),
+  anomalies: (token: string, deviceId?: string, startTime?: string, endTime?: string) => {
+    const query = new URLSearchParams()
+    if (deviceId) query.set('device_id', deviceId)
+    if (startTime) query.set('start_time', startTime)
+    if (endTime) query.set('end_time', endTime)
+    return request<AnomalyItem[]>(`/anomalies?${query}`, { token })
+  },
+  detectAnomalies: (token: string, deviceId?: string, startTime?: string, endTime?: string) => {
+    const query = new URLSearchParams()
+    if (deviceId) query.set('device_id', deviceId)
+    if (startTime) query.set('start_time', startTime)
+    if (endTime) query.set('end_time', endTime)
+    return request<{ created: number; items: AnomalyItem[] }>(`/anomalies/detect?${query}`, {
+      method: 'POST',
+      token,
+    })
+  },
+  exportEnergy: (
+    token: string,
+    format: 'csv' | 'json',
+    startTime: string,
+    endTime: string,
+    deviceId?: string,
+    metrics: string[] = ['energy', 'tegangan', 'arus'],
+  ) => {
+    const query = new URLSearchParams({ start_time: startTime, end_time: endTime })
+    if (deviceId) query.set('device_id', deviceId)
+    metrics.forEach((metric) => query.append('metrics', metric))
+    return request<Blob>(`/exports/energy.${format}?${query}`, { token, responseType: 'blob' })
   },
   createDevice: (token: string, payload: DevicePayload & { device_id: string }) =>
     request<Device>('/devices', { method: 'POST', body: payload, token }),
@@ -380,4 +481,3 @@ export const api = {
   markAllNotificationsRead: (token: string) =>
     request<{ message: string }>('/notifications/read-all', { method: 'POST', token }),
 }
-/**..*/
