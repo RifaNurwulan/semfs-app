@@ -1,24 +1,12 @@
-"""
-routes/maintenance.py
----------------------
-Alat admin di halaman Maintenance:
-  GET  /maintenance/audit-logs   jejak aktivitas pengguna (NF-08)
-  GET  /maintenance/backup       unduh konfigurasi device sebagai file JSON
-  POST /maintenance/restore      pulihkan konfigurasi dari file backup (digabung, tidak ada yang dihapus)
-
-Restore bersifat "semua atau tidak sama sekali": kalau ada satu data yang salah,
-tidak ada perubahan yang disimpan. File dicek dengan checksum SHA-256 untuk
-mendeteksi file rusak/berubah (SRS: pesan "File Korup").
-"""
-
 import hashlib
 import hmac
 import json
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from psycopg2.extras import Json
 
 from ..audit import record
@@ -45,6 +33,17 @@ def _checksum(body: dict) -> str:
 
 def _corrupt(detail: str = "File Korup") -> HTTPException:
     return HTTPException(status_code=422, detail=detail)
+
+
+class SystemSettingsOut(BaseModel):
+    timezone: str
+    language: str
+    updated_at: datetime
+
+
+class SystemSettingsUpdate(BaseModel):
+    timezone: Literal["Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"]
+    language: Literal["id", "en"]
 
 
 @router.get("/audit-logs", response_model=AuditLogList)
@@ -101,6 +100,44 @@ def update_energy_tariff(
         user=user,
         entity="system_settings",
         detail=f"Tarif energi diperbarui menjadi Rp {body.price_per_kwh}/kWh",
+        request=request,
+    )
+    conn.commit()
+    return row
+
+
+@router.get("/settings", response_model=SystemSettingsOut)
+def get_system_settings(user=Depends(get_current_user), conn=Depends(get_db)):
+    with conn.cursor() as cur:
+        cur.execute("SELECT timezone, language, updated_at FROM system_settings WHERE id = 1")
+        row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=503, detail="Pengaturan sistem belum tersedia. Jalankan migration terbaru.")
+    return row
+
+
+@router.put("/settings", response_model=SystemSettingsOut)
+def update_system_settings(
+    body: SystemSettingsUpdate,
+    request: Request,
+    user=Depends(require_roles("admin")),
+    conn=Depends(get_db),
+):
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE system_settings SET timezone = %s, language = %s, updated_at = now() "
+            "WHERE id = 1 RETURNING timezone, language, updated_at",
+            (body.timezone, body.language),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=503, detail="Pengaturan sistem belum tersedia. Jalankan migration terbaru.")
+    record(
+        conn,
+        "system_settings_update",
+        user=user,
+        entity="system_settings",
+        detail=f"Zona waktu: {body.timezone}, bahasa: {body.language}",
         request=request,
     )
     conn.commit()

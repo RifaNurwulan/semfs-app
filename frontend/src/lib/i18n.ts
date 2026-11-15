@@ -1,623 +1,765 @@
-import { useCallback, useSyncExternalStore } from 'react'
 
-export type SystemLanguage = 'id' | 'en'
+import { useEffect, useSyncExternalStore } from 'react'
+import { getToken } from '../auth/tokenStorage'
 
-const LANGUAGE_KEY = 'semfs-system-language'
-const LANGUAGE_OVERRIDE_KEY = 'semfs-system-language-override'
+export type Lang = 'id' | 'en'
+
+const API_BASE: string =
+  import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+
+const STORAGE_KEY = 'semfs-lang'
+
+// ==========================================
+// LANGUAGE STATE
+// ==========================================
+
+function readStored(): Lang {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === 'en'
+      ? 'en'
+      : 'id'
+  } catch {
+    return 'id'
+  }
+}
+
+let current: Lang = readStored()
+let loadedFromServer = false
+let languageRevision = 0
+
 const listeners = new Set<() => void>()
 
-const english: Record<string, string> = {
-  'Kembali ke Dashboard': 'Back to Dashboard',
-  'Masuk ke Dashboard': 'Sign in to Dashboard',
-  'Akses sistem monitoring dan forecasting energi Anda': 'Access your energy monitoring and forecasting system',
-  'Email atau Username': 'Email or Username',
-  'Email atau username wajib diisi': 'Email or username is required',
-  'Password wajib diisi': 'Password is required',
-  'Password': 'Password',
-  'Masukkan password': 'Enter your password',
-  'Sembunyikan password': 'Hide password',
-  'Tampilkan password': 'Show password',
-  'Ingat saya': 'Remember me',
-  'Lupa password?': 'Forgot password?',
-  'Memproses...': 'Processing...',
-  'Belum punya akun?': "Don't have an account?",
-  'Daftar sekarang': 'Register now',
-  'Sesi login diamankan dengan token JWT': 'Your session is secured with a JWT',
-  'Butuh bantuan?': 'Need help?',
-  'Hubungi Support': 'Contact Support',
-  'Pengaturan Sistem': 'System Settings',
-  'Konfigurasi zona waktu dan bahasa': 'Configure your time zone and language',
-  'Konfigurasi zona waktu, bahasa, dan interval polling': 'Configure your time zone, language, and polling interval',
-  'Interval Polling': 'Polling Interval',
-  'Jeda pembacaan semua power meter. Perubahan berlaku otomatis setelah konfigurasi reader diperbarui.': 'Reading interval for all power meters. Changes apply automatically after the reader refreshes its configuration.',
-  'detik': 'seconds',
-  'Interval polling harus berupa bilangan bulat antara 1 dan 3600 detik.': 'Polling interval must be a whole number between 1 and 3600 seconds.',
-  'Hanya Admin yang dapat mengubah pengaturan sistem.': 'Only Admins can change system settings.',
-  'Backend API belum mendukung interval polling. Restart API dari folder backend.': 'The backend API does not support polling intervals yet. Restart the API from the backend folder.',
-  'Zona Waktu': 'Time Zone',
-  'Waktu Indonesia Barat (GMT+7)': 'Western Indonesia Time (GMT+7)',
-  'Waktu Indonesia Tengah (GMT+8)': 'Central Indonesia Time (GMT+8)',
-  'Waktu Indonesia Timur (GMT+9)': 'Eastern Indonesia Time (GMT+9)',
-  'Universal Time Coordinated': 'Coordinated Universal Time',
-  'Bahasa': 'Language',
-  'Bahasa Indonesia': 'Indonesian',
-  'Simpan Pengaturan': 'Save Settings',
-  'Pengaturan berhasil disimpan.': 'Settings saved successfully.',
-  'Gagal memuat pengaturan.': 'Could not load settings.',
-  'Gagal menyimpan pengaturan.': 'Could not save settings.',
-  'Memuat pengaturan...': 'Loading settings...',
-  'Preview': 'Preview',
-  'Waktu Saat Ini': 'Current Time',
-  'Bahasa Aktif': 'Active Language',
-  'Pratinjau tersedia setelah pengaturan dimuat.': 'Preview will be available after settings load.',
-  'Forecasting Energy': 'Energy Forecast',
-  'Prediksi konsumsi energi menggunakan data historis': 'Energy consumption forecast based on historical data',
-  'Pilih Device': 'Select Device',
-  'Pilih Parameter': 'Select Metric',
-  'Konsumsi Energi (kWh)': 'Energy Consumption (kWh)',
-  'Power Factor': 'Power Factor',
-  'Perbandingan 7 Hari: Historis vs Forecast': '7-Day Comparison: Historical vs Forecast',
-  'Data simulasi': 'Simulated data',
-  'Trend Mingguan': 'Weekly Trend',
-  'Distribusi forecast berdasarkan periode waktu': 'Forecast distribution by time period',
-  'Periode forecast terpilih': 'Selected forecast period',
-  'Off-Peak': 'Off-Peak',
-  'Peak': 'Peak',
-  'Jam': 'Hours',
-  'Generate Forecast untuk melihat distribusi.': 'Generate a forecast to see the distribution.',
-  'Diagram batang historis dan forecast per hari dalam seminggu': 'Historical and forecast bar chart by weekday',
-  'Periode Forecast': 'Forecast Horizon',
-  '7 Hari ke Depan': 'Next 7 Days',
-  '14 Hari ke Depan': 'Next 14 Days',
-  '30 Hari ke Depan': 'Next 30 Days',
-  'Belum ada perangkat terdaftar.': 'No devices are registered.',
-  'Generate Forecast': 'Generate Forecast',
-  'Forecast belum tersedia': 'Forecast is not available yet',
-  'Belum tersedia': 'Not available',
-  'Tren Forecast': 'Forecast Trend',
-  'Akurasi model (holdout)': 'Model accuracy (holdout)',
-  'Total Forecast': 'Total Forecast',
-  'Estimasi Biaya': 'Estimated Cost',
-  'Periode terpilih': 'Selected period',
-  'Model Aktif': 'Active Model',
-  'Belum dilatih': 'Not trained',
-  'Belum ada model terlatih': 'No model trained yet',
-  'Model hasil evaluasi historis': 'Model selected from historical evaluation',
-  'Rata-rata Forecast': 'Average Forecast',
-  'Prediksi Maksimum': 'Maximum Prediction',
-  'Puncak forecast': 'Forecast peak',
-  'Prediksi Minimum': 'Minimum Prediction',
-  'Nilai minimum': 'Minimum value',
-  'Data Model': 'Model Data',
-  'Status perangkat': 'Device status',
-  'Rentang deteksi anomali': 'Anomaly detection range',
-  '{count} jam terakhir': 'Last {count} hours',
-  '24 jam terakhir': 'Last 24 hours',
-  '{count} hari terakhir': 'Last {count} days',
-  'Jalankan Deteksi': 'Run Detection',
-  'Tidak ada anomali tersimpan dalam rentang ini.': 'No anomalies are saved in this range.',
-  'Rata-rata': 'Average',
-  'Maksimum': 'Maximum',
-  'Minimum': 'Minimum',
-  'Training selesai. Memuat hasil terbaru...': 'Training complete. Loading the latest results...',
-  'Training tidak dapat dimulai.': 'Could not start training.',
-  'Gagal memuat hasil forecasting.': 'Could not load forecast results.',
-  'Gagal memeriksa status training.': 'Could not check training status.',
-  'Ekspor & Laporan': 'Export & Reports',
-  'Generate dan export data laporan energi': 'Generate and export energy reports',
-  'Pilih Periode': 'Select Date Range',
-  'Tanggal Mulai': 'Start Date',
-  'Tanggal Selesai': 'End Date',
-  'Pilih cepat:': 'Quick select:',
-  '7 Hari Terakhir': 'Last 7 Days',
-  '30 Hari Terakhir': 'Last 30 Days',
-  'Bulan Ini': 'This Month',
-  'Pilih Semua': 'Select All',
-  'Hapus Pilihan': 'Clear Selection',
-  'Tegangan (V)': 'Voltage (V)',
-  'Arus (A)': 'Current (A)',
-  'Daya (W)': 'Power (W)',
-  'Frekuensi (Hz)': 'Frequency (Hz)',
-  'Temperatur (°C)': 'Temperature (°C)',
-  'Efisiensi (%)': 'Efficiency (%)',
-  'Format File': 'File Format',
-  'CSV File': 'CSV File',
-  'Format spreadsheet yang kompatibel dengan Excel': 'Spreadsheet format compatible with Excel',
-  'Ringkasan dan data laporan siap dibagikan': 'A shareable report summary and data',
-  'Ringkasan Export': 'Export Summary',
-  'Perangkat': 'Device',
-  'Semua Perangkat': 'All Devices',
-  'Periode': 'Date Range',
-  'Parameter': 'Metrics',
-  'parameter dipilih': 'metrics selected',
-  'Estimasi Ukuran': 'Estimated Size',
-  'Export Data': 'Export Data',
-  'Belum dipilih': 'Not selected',
-  'Sesi login tidak tersedia. Silakan login kembali.': 'Your session is unavailable. Please sign in again.',
-  'Pilih rentang waktu yang valid.': 'Select a valid date range.',
-  'Pilih minimal satu parameter laporan.': 'Select at least one report metric.',
-  'Laporan berhasil dibuat dan diunduh.': 'Report generated and downloaded.',
-  'File laporan kosong. Periksa rentang waktu dan data yang tersedia.': 'The report file is empty. Check the date range and available data.',
-  'Gagal mengekspor laporan.': 'Could not export the report.',
-  'Pengaturan sistem': 'System Settings',
-  'Selamat Datang di Dashboard': 'Welcome to the Dashboard',
-  'Overview sistem monitoring dan forecasting energi Anda': 'Your energy monitoring and forecasting overview',
-  'Perangkat Online': 'Online Devices',
-  'Status power meter': 'Power meter status',
-  'Total Perangkat': 'Total Devices',
-  'Terdaftar di sistem': 'Registered in the system',
-  'Kesehatan Sistem': 'System Health',
-  'API & database': 'API & database',
-  'Periksa': 'Check',
-  'Notifikasi Aktif': 'Active Notifications',
-  'Belum dibaca': 'Unread',
-  'Menu Utama': 'Main Menu',
-  'Sistem Operasional': 'System Operational',
-  'Memeriksa status sistem...': 'Checking system status...',
-  'Server tidak terhubung': 'Server is disconnected',
-  'Pemeriksaan terakhir:': 'Last checked:',
-  'Terhubung': 'Connected',
-  'Tidak terhubung': 'Disconnected',
-  'Akun:': 'Account:',
-  'Pantau konsumsi energi real-time dengan visualisasi interaktif': 'Monitor real-time energy consumption with interactive visualizations',
-  'Prediksi dan analisis tren konsumsi energi menggunakan AI': 'Forecast and analyze energy consumption trends with AI',
-  'Konfigurasi sistem': 'Configure the system',
-  'Generate laporan': 'Generate reports',
-  'Kelola tarif energi dan perangkat power meter': 'Manage energy rates and power meter devices',
-  'Atur akun, role, dan pesan support': 'Manage accounts, roles, and support messages',
-  'Smart Energy Monitoring & Forecasting System': 'Smart Energy Monitoring & Forecasting System',
-  'Menu akun': 'Account menu',
-  'Role:': 'Role:',
-  'Edit Profil': 'Edit Profile',
-  'Keluar': 'Sign Out',
-  'Tidak ada notifikasi.': 'No notifications.',
-  'Tandai semua dibaca': 'Mark all as read',
-  'Monitoring Energy': 'Energy Monitoring',
-  'Pantau konsumsi energi secara real-time': 'Monitor energy consumption in real time',
-  'Maintenance': 'Maintenance',
-  'Log Aktivitas': 'Activity Log',
-  'Backup & Restore': 'Backup & Restore',
-  'Tarif Energi': 'Energy Tariff',
-  'Menu Maintenance': 'Maintenance Menu',
-  'Total Device': 'Total Devices',
-  'Nama Perangkat': 'Device Name',
-  'Last Sync': 'Last Sync',
-  'Aksi': 'Actions',
-  'Online': 'Online',
-  'Offline': 'Offline',
-  'Error': 'Error',
-  'Nonaktif': 'Disabled',
-  'Nama': 'Name',
-  'Lokasi': 'Location',
-  'Batas Daya (W)': 'Power Limit (W)',
-  'Uptime 24 jam (%)': '24-hour Uptime (%)',
-  'Cari device': 'Search devices',
-  'Cari device...': 'Search devices...',
-  'Tambah Device': 'Add Device',
-  'Memuat device...': 'Loading devices...',
-  'Belum ada device. Klik Tambah Device.': 'No devices yet. Select Add Device.',
-  'Tidak ada device yang cocok.': 'No matching devices found.',
-  'Uji koneksi gagal': 'Connection test failed',
-  'Belum pernah': 'Never',
-  'Status': 'Status',
-  'Device ID': 'Device ID',
-  'IP Address': 'IP Address',
-  'Port': 'Port',
-  'Register': 'Register',
-  'Akun pengguna': 'User account',
-  'Daftar Pengguna': 'User List',
-  'Tambah Pengguna': 'Add User',
-  'Username': 'Username',
-  'Email': 'Email',
-  'Terdaftar': 'Registered',
-  'Terdaftar sejak': 'Registered since',
-  'Tidak bisa mengubah role akun sendiri': 'You cannot change your own account role',
-  'Anda': 'You',
-  'Viewer': 'Viewer',
-  'Operator': 'Operator',
-  'Admin': 'Admin',
-  'Informasi Akun': 'Account Information',
-  'Foto Profil': 'Profile Photo',
-  'Ganti Foto': 'Change Photo',
-  'Pilih Foto': 'Choose Photo',
-  'Hapus Foto': 'Remove Photo',
-  'Simpan Perubahan': 'Save Changes',
-  'Gagal memuat data.': 'Could not load data.',
-  'Tidak ada data tersedia.': 'No data available.',
-  'Memuat...': 'Loading...',
-  'Kembali': 'Back',
-  'Simpan': 'Save',
-  'Batal': 'Cancel',
-  'Tutup': 'Close',
-  'Ya': 'Yes',
-  'Tidak': 'No',
-  'Terjadi kesalahan. Coba lagi.': 'Something went wrong. Please try again.',
-  'Tidak dapat terhubung ke server. Pastikan API sudah berjalan.': 'Cannot connect to the server. Make sure the API is running.',
-  'Monitor konsumsi energi secara real-time dan prediksi kebutuhan masa depan dengan akurasi tinggi': 'Monitor energy consumption in real time and forecast future demand with high accuracy',
-  'Real-time Monitoring': 'Real-time Monitoring',
-  'Pantau penggunaan energi listrik secara langsung': 'Monitor electricity usage in real time',
-  'Forecasting Analytics': 'Forecasting Analytics',
-  'Prediksi tren konsumsi dengan AI dan machine learning': 'Forecast consumption trends with AI and machine learning',
-  'Energy Optimization': 'Energy Optimization',
-  'Rekomendasi untuk efisiensi dan penghematan energi': 'Recommendations for energy efficiency and savings',
-  'Akurasi': 'Accuracy',
-  'nama@perusahaan.com': 'name@company.com',
-  'Tarif': 'Rate',
-  'Training gagal. Periksa konfigurasi database dan log backend, lalu coba lagi.': 'Training failed. Check the database configuration and backend logs, then try again.',
-  'Memuat data forecasting...': 'Loading forecast data...',
-  'Data Historis': 'Historical Data',
-  'titik aktual': 'actual points',
-  'Belum ada data aktual atau forecast untuk parameter ini.': 'There is no actual data or forecast for this metric yet.',
-  'Data model': 'Model data',
-  'Notifikasi': 'Notifications',
-  'belum dibaca': 'unread',
-  'device bermasalah': 'devices need attention',
-  'Normal': 'Normal',
-  'Database:': 'Database:',
-  'Akses ditolak': 'Access Denied',
-  'Role {role} tidak memiliki izin untuk membuka halaman ini.': 'The {role} role is not allowed to access this page.',
-  'Anda tidak memiliki izin untuk membuka halaman ini.': 'You do not have permission to access this page.',
-  'Halaman tidak ditemukan': 'Page Not Found',
-  'Alamat yang Anda buka tidak ada.': 'The address you opened does not exist.',
-  'Memuat sesi...': 'Loading session...',
-  'Buat Akun': 'Create Account',
-  'Daftar untuk mendapat akses ke dashboard SEMFS': 'Register to access the SEMFS dashboard',
-  'Username 3-50 karakter: huruf, angka, titik, garis bawah, atau strip': 'Username must be 3–50 characters: letters, numbers, periods, underscores, or hyphens',
-  'Format email tidak valid': 'Invalid email format',
-  'Konfirmasi password tidak sama': 'Password confirmation does not match',
-  'Akun berhasil dibuat. Silakan login.': 'Account created successfully. Please sign in.',
-  'Akun berhasil dibuat. Masukkan kode OTP yang dikirim ke email Anda.': 'Account created. Enter the OTP code sent to your email.',
-  'Verifikasi Email': 'Verify Email',
-  'Masukkan kode OTP 6 digit yang kami kirim ke email Anda': 'Enter the 6-digit OTP code we sent to your email',
-  'Kode OTP': 'OTP Code',
-  'Kode OTP harus 6 digit angka': 'The OTP code must be 6 digits',
-  'Berlaku 10 menit': 'Valid for 10 minutes',
-  'Memverifikasi...': 'Verifying...',
-  'Belum menerima kode?': "Didn't receive the code?",
-  'Kirim ulang kode': 'Resend code',
-  'Email belum diverifikasi. Masukkan kode OTP yang dikirim ke email Anda.': 'Your email is not verified. Enter the OTP code sent to your email.',
-  'Kode verifikasi tidak valid atau sudah kedaluwarsa': 'The verification code is invalid or has expired.',
-  'Kode verifikasi salah. Periksa kembali kode di email Anda.': 'Incorrect verification code. Check the code in your email.',
-  'Terlalu banyak percobaan. Minta kode OTP baru.': 'Too many attempts. Request a new OTP code.',
-  'Email sudah terverifikasi. Silakan login.': 'Email is already verified. Please sign in.',
-  'Email berhasil diverifikasi. Silakan login.': 'Email verified successfully. Please sign in.',
-  'Jika email terdaftar dan belum diverifikasi, kode OTP baru telah dikirim.': 'If the email is registered and not verified, a new OTP code has been sent.',
-  'Minimal 8 karakter': 'At least 8 characters',
-  'Konfirmasi password': 'Confirm password',
-  'Mendaftar...': 'Registering...',
-  'Daftar': 'Register',
-  'Akun baru otomatis berperan Viewer. Admin dapat mengubah role Anda.': 'New accounts are assigned the Viewer role. An admin can change your role.',
-  'Sudah punya akun?': 'Already have an account?',
-  'Masuk': 'Sign in',
-  'Lupa Password': 'Forgot Password',
-  'Masukkan email akun Anda, kami kirimkan tautan untuk membuat password baru': 'Enter your account email and we will send a link to create a new password',
-  'Masukkan email yang valid': 'Enter a valid email address',
-  'Periksa kotak masuk (dan folder spam) email Anda. Tautan hanya berlaku sementara dan hanya bisa dipakai satu kali.': 'Check your inbox (and spam folder). The link is temporary and can only be used once.',
-  'Kirim ulang tautan': 'Resend link',
-  'Mengirim...': 'Sending...',
-  'Kirim Tautan Reset': 'Send Reset Link',
-  'Kembali ke halaman login': 'Back to sign-in',
-  'Buat Password Baru': 'Create a New Password',
-  'Masukkan password baru untuk akun Anda': 'Enter a new password for your account',
-  'Minta tautan reset baru': 'Request a new reset link',
-  'Password berhasil diganti. Silakan login dengan password baru.': 'Password changed successfully. Sign in with your new password.',
-  'Ke halaman login': 'Go to sign-in',
-  'Tautan reset tidak lengkap. Buka tautan langsung dari email Anda.': 'The reset link is incomplete. Open the link directly from your email.',
-  'Password baru': 'New password',
-  'Konfirmasi password baru': 'Confirm new password',
-  'Menyimpan...': 'Saving...',
-  'Simpan Password Baru': 'Save New Password',
-  'Ceritakan kendala Anda, tim kami akan membalas lewat email': 'Tell us about your issue and our team will reply by email',
-  'Nama minimal 2 karakter': 'Name must be at least 2 characters',
-  'Pesan minimal 10 karakter': 'Message must be at least 10 characters',
-  'Email untuk balasan': 'Reply-to email',
-  'Pesan': 'Message',
-  'karakter': 'characters',
-  'Kirim Pesan': 'Send Message',
-  'Ringkasan forecast': 'Forecast summary',
-  'Sesi login tidak tersedia untuk stream realtime.': 'Sign-in is required for the real-time stream.',
-  'Format data stream tidak valid.': 'The stream data format is invalid.',
-  'Koneksi realtime terputus; sistem akan mencoba kembali.': 'The real-time connection was lost; reconnecting.',
-  'Sesi login tidak berlaku untuk stream. Login ulang untuk menyambungkan kembali.': 'Your sign-in session is not valid for the stream. Sign in again to reconnect.',
-  'Tidak terautentikasi': 'Not authenticated',
-  'Menghubungkan': 'Connecting',
-  'Menyambung ulang': 'Reconnecting',
-  'Stream perangkat': 'Device Stream',
-  'Menunggu data perangkat...': 'Waiting for device data...',
-  'Data realtime belum tersedia.': 'Real-time data is not available yet.',
-  'Belum ada bacaan': 'No readings yet',
-  'Tren realtime': 'Real-time Trend',
-  'sampel': 'samples',
-  '60 sampel terakhir': 'last 60 samples',
-  'Sesi login tidak tersedia.': 'Sign-in session is unavailable.',
-  'Gagal memuat anomali.': 'Could not load anomalies.',
-  '{count} anomali baru terdeteksi.': '{count} new anomalies detected.',
-  'Deteksi anomali gagal.': 'Anomaly detection failed.',
-  'Deteksi anomali daya': 'Power Anomaly Detection',
-  'Deteksi 24 jam': 'Detect for Last 24 Hours',
-  'Memuat anomali...': 'Loading anomalies...',
-  'Tidak ada anomali tersimpan dalam 24 jam terakhir.': 'No anomalies are stored for the last 24 hours.',
-  'Anomali': 'Anomaly',
-  'Nama pengguna': 'Username',
-  'Role untuk': 'Role for',
-  'Ubah role untuk mengatur hak akses tiap pengguna': 'Change roles to manage each user’s access',
-  'Memuat pengguna...': 'Loading users...',
-  'Foto profil berhasil diperbarui.': 'Profile photo updated successfully.',
-  'Foto profil dihapus.': 'Profile photo removed.',
-  'Pilih file foto profil': 'Choose a profile photo',
-  'JPG, PNG, atau WebP. Foto dipotong persegi dan diperkecil otomatis.': 'JPG, PNG, or WebP. The photo is cropped square and resized automatically.',
-  'Kelola informasi akun dan keamanan Anda': 'Manage your account information and security',
-  'Tampil di pojok kanan atas dan menu akun': 'Shown in the upper-right corner and account menu',
-  'Username dan email untuk login': 'Username and email for signing in',
-  'Profil berhasil diperbarui.': 'Profile updated successfully.',
-  'Role hanya dapat diubah oleh admin.': 'Only an admin can change your role.',
-  'Password saat ini wajib diisi': 'Current password is required',
-  'Password baru harus berbeda dari yang lama': 'The new password must be different from the current one',
-  'Password saat ini': 'Current password',
-  'Ganti Password': 'Change Password',
-  'Ubah password akun Anda': 'Change your account password',
-  'Password berhasil diperbarui.': 'Password updated successfully.',
-  'Export': 'Export',
-  'Uptime': 'Uptime',
-  'Cek': 'Check',
-  'Uji koneksi': 'Test Connection',
-  'Uji koneksi {device}': 'Test connection for {device}',
-  'Monitoring energi': 'Energy monitoring',
-  'Selamat datang': 'Welcome',
-  'Pantau konsumsi, performa meter, dan tren energi secara realtime.': 'Monitor consumption, meter performance, and energy trends in real time.',
-  'Power meter untuk ringkasan dan tabel': 'Power meter for summary and table',
-  'Semua perangkat': 'All devices',
-  'Perbarui': 'Refresh',
-  'Filter monitoring': 'Monitoring filters',
-  'Periode ringkasan & tabel realtime': 'Summary and real-time table period',
-  'Pilih mode monitoring': 'Select monitoring mode',
-  'Pilih tanggal': 'Select dates',
-  'Dari': 'From',
-  'Sampai': 'To',
-  'Refresh tiap 5 detik': 'Refresh every 5 seconds',
-  'Rentang historis · WIB': 'Historical range · WIB',
-  'Menunggu data...': 'Waiting for data...',
-  'Perhatian': 'Attention',
-  'Konsumsi energi per hari': 'Daily energy consumption',
-  'Energi harian (kWh) sesuai meter dan rentang waktu yang dipilih': 'Daily energy (kWh) by meter and selected date range',
-  'Konsumsi per power meter': 'Consumption per power meter',
-  'Porsi energi pada meter dan rentang waktu terpilih': 'Energy share per meter and selected date range',
-  'Peringatan & notifikasi': 'Alerts & notifications',
-  'Pembaruan operasional terbaru': 'Latest operational updates',
-  'Tren': 'Trend',
-  'Nilai aktual setiap pembacaan · parameter': 'Actual reading values · metric',
-  'Pembacaan aktual 1 jam terakhir · pembaruan otomatis tiap 5 detik': 'Actual readings for the last hour · auto-refresh every 5 seconds',
-  'Pembacaan aktual ·': 'Actual readings ·',
-  'sampai': 'to',
-  'Ekspor CSV': 'Export CSV',
-  'Perbandingan konsumsi': 'Consumption comparison',
-  'Perubahan konsumsi energi pada rentang terpilih': 'Energy consumption change over the selected range',
-  'Faktor daya': 'Power factor',
-  'Tren power factor pada rentang terpilih': 'Power factor trend over the selected range',
-  'Bacaan realtime': 'Real-time readings',
-  'Bacaan pada rentang waktu': 'Readings in selected range',
-  'Pratinjau pengukuran power meter terkini': 'Latest power meter readings preview',
-  'Bacaan terakhir yang tercatat dalam rentang terpilih': 'Most recent readings recorded in the selected range',
-  'perangkat': 'devices',
-  'Tampilkan lebih sedikit': 'Show less',
-  'Lihat semua': 'View all',
-  'Pembaruan': 'Updated',
-  'Pengukuran': 'Measurement',
-  'Lihat': 'View',
-  'parameter Modbus': 'Modbus parameters',
-  'Tidak ada perangkat untuk ditampilkan.': 'No devices to display.',
-  'Prediksi konsumsi energi': 'Energy consumption forecast',
-  'Belum ada hasil prediksi yang tersedia. Dashboard ini tidak menampilkan angka estimasi tanpa data dari modul forecasting.': 'No forecast is available yet. The dashboard will not show estimates without data from the forecasting module.',
-  'Buka Forecasting': 'Open Forecasting',
-  'Memuat data monitoring energi...': 'Loading energy monitoring data...',
-  'Grafik batang konsumsi energi harian yang dipisahkan per power meter': 'Daily energy consumption bar chart by power meter',
-  'Belum ada data konsumsi energi harian pada rentang ini.': 'No daily energy consumption data is available for this range.',
-  '7 hari terakhir dibanding 7 hari sebelumnya': 'Last 7 days compared with the previous 7 days',
-  'Perbandingan dua bagian rentang terpilih': 'Comparison of the two halves of the selected range',
-  'Sebelumnya': 'Previous',
-  'Bagian awal': 'First half',
-  'Bagian akhir': 'Second half',
-  'Perubahan:': 'Change:',
-  'belum ada pembanding': 'no comparison available',
-  'Perlu data minimal dua hari untuk perbandingan.': 'At least two days of data are needed for comparison.',
-  'Tren faktor daya terpisah untuk setiap power meter': 'Power factor trend for each power meter',
-  'Data faktor daya belum tersedia.': 'Power factor data is not available yet.',
-  'Notifikasi tidak tersedia untuk akun ini.': 'Notifications are unavailable for this account.',
-  'Pemberitahuan sistem': 'System notification',
-  'Tidak ada notifikasi terbaru': 'No recent notifications',
-  'Perangkat untuk ringkasan dan tabel': 'Devices for summary and table',
-  'Konfigurasi parameter Modbus': 'Modbus parameter configuration',
-  'Isi format register, urutan byte/word, dan faktor skala sesuai manual meter. Alamat PDU menggunakan 0-based.': 'Enter the register format, byte/word order, and scale factor from the meter manual. PDU addresses are zero-based.',
-  'Periksa konfigurasi parameter, jenis register, format data, panjang, dan alamat.': 'Check the parameter configuration, register type, data format, length, and address.',
-  'Tambah Parameter': 'Add Parameter',
-  'Satuan': 'Unit',
-  'Byte': 'Byte',
-  'Word': 'Word',
-  'Skala': 'Scale',
-  'Jenis register': 'Register type',
-  'Format data': 'Data format',
-  'Panjang (register)': 'Length (registers)',
-  'Alamat awal': 'Start address',
-  'Alamat register': 'Register address',
-  'Urutan byte': 'Byte order',
-  'Urutan word': 'Word order',
-  'Faktor skala': 'Scale factor',
-  'Hapus parameter': 'Remove parameter',
-  'Hapus': 'Delete',
-  'Aktif (dibaca oleh pembaca Modbus)': 'Enabled (read by the Modbus reader)',
-  'Ubah Device': 'Edit Device',
-  'Nama perangkat': 'Device name',
-  'Power Meter Lantai 1': 'Floor 1 Power Meter',
-  'IP sama boleh dipakai beberapa device. localhost menunjuk ke komputer tempat reader Modbus berjalan.': 'Multiple devices can use the same IP. localhost refers to the computer running the Modbus reader.',
-  'Port standar Modbus TCP: 502': 'Standard Modbus TCP port: 502',
-  'Virtual ID (Unit ID Modbus)': 'Virtual ID (Modbus Unit ID)',
-  'ID 1-247 untuk meter/gateway; 255 untuk server TCP langsung. Jika IP dan port sama, gunakan ID berbeda.': 'Use ID 1–247 for a meter/gateway or 255 for a direct TCP server. Use different IDs when the IP and port are the same.',
-  'Batas daya (Watt)': 'Power limit (Watt)',
-  'Kosongkan = tanpa notifikasi batas': 'Leave blank for no limit notification',
-  'Holding Register': 'Holding Register',
-  'Input Register': 'Input Register',
-  'Hapus Device': 'Delete Device',
-  'Hapus beserta semua datanya': 'Delete with all its data',
-  'Konfirmasi Device ID': 'Confirm Device ID',
-  'Device ini punya data historis (pembacaan, forecast, anomali). Menghapusnya akan menghapus seluruh data itu secara permanen. Pertimbangkan menonaktifkan device lewat tombol Ubah.': 'This device has historical data (readings, forecasts, anomalies). Deleting it permanently removes that data. Consider disabling the device using Edit.',
-  'Ketik': 'Type',
-  'untuk melanjutkan': 'to continue',
-  'akan dihapus dari konfigurasi.': 'will be removed from the configuration.',
-  'Siapa melakukan apa, dan kapan': 'Who did what, and when',
-  'Filter aksi': 'Filter actions',
-  'Semua aksi': 'All actions',
-  'Waktu (WIB)': 'Time (WIB)',
-  'Detail': 'Details',
-  'Memuat log...': 'Loading activity log...',
-  'Belum ada aktivitas tercatat.': 'No activity has been recorded.',
-  'Muat lebih banyak': 'Load more',
-  'Backup Konfigurasi': 'Configuration Backup',
-  'Simpan konfigurasi semua device ke satu file': 'Save all device configurations to one file',
-  'File berisi IP, port, Virtual ID, register, lokasi, dan batas daya tiap device. Data pembacaan, akun, dan password tidak ikut disimpan.': 'The file contains each device’s IP, port, Virtual ID, registers, location, and power limit. Readings, accounts, and passwords are not included.',
-  'Unduh Backup': 'Download Backup',
-  'Backup konfigurasi diunduh. Simpan file ini di tempat aman.': 'Configuration backup downloaded. Store this file in a safe place.',
-  'Backup gagal': 'Backup failed',
-  'Restore Konfigurasi': 'Restore Configuration',
-  'Pulihkan konfigurasi dari file backup': 'Restore configuration from a backup file',
-  'Device dengan ID yang sama akan ditimpa konfigurasinya, device baru ditambahkan. Device yang tidak ada di file': 'Devices with matching IDs will have their configuration replaced, and new devices will be added. Devices not in the file',
-  'tidak dihapus': 'are not deleted',
-  'Jika ada satu data yang salah, tidak ada yang diubah.': 'If any data is invalid, no changes will be made.',
-  'Pilih file backup': 'Choose a backup file',
-  'Pilih File Backup': 'Choose Backup File',
-  'Pulihkan': 'Restore',
-  'Pulihkan konfigurasi?': 'Restore configuration?',
-  'Konfigurasi dari': 'Configuration from',
-  'akan diterapkan. Konfigurasi device dengan ID yang sama akan ditimpa.': 'will be applied. Configuration for devices with matching IDs will be replaced.',
-  'Ya, Pulihkan': 'Yes, Restore',
-  'File terlalu besar (maksimal 1 MB).': 'File is too large (maximum 1 MB).',
-  'Restore gagal': 'Restore failed',
-  'Tarif listrik per kWh': 'Electricity tariff per kWh',
-  'Tarif ini digunakan untuk menghitung estimasi biaya energi pada halaman Monitoring Energy.': 'This tariff is used to estimate energy costs on the Energy Monitoring page.',
-  'Perhitungan biaya mengikuti konsumsi kWh pada periode yang dipilih.': 'Cost calculation is based on kWh consumption during the selected period.',
-  'Harga per kWh (Rp)': 'Price per kWh (IDR)',
-  'Contoh: 1444.70': 'Example: 1444.70',
-  'Memuat tarif saat ini...': 'Loading current tariff...',
-  'Tarif saat ini:': 'Current tariff:',
-  'Simpan tarif': 'Save tariff',
-  'Gagal memuat tarif energi.': 'Could not load the energy tariff.',
-  'Masukkan tarif berupa angka non-negatif dengan maksimal 2 angka desimal.': 'Enter a non-negative tariff with no more than 2 decimal places.',
-  'Tarif yang dimasukkan tidak valid.': 'The entered tariff is invalid.',
-  'Gagal menyimpan tarif energi.': 'Could not save the energy tariff.',
-  'Belum ada notifikasi.': 'No notifications.',
-  'Peringatan': 'Alerts',
-  'Ringkasan': 'Summary',
-  'Sistem Normal': 'System Normal',
-  'Hubungi Admin atau Operator untuk menjalankan training.': 'Contact an admin or operator to run training.',
-  'Prediksi konsumsi energi dengan model AI': 'Forecast energy consumption with an AI model',
-  'Kelola Pengguna': 'Manage Users',
-  'Kelola akun pengguna, role, dan pesan support': 'Manage user accounts, roles, and support messages',
-  'localhost atau 192.168.1.101': 'localhost or 192.168.1.101',
-  'Forecast': 'Forecast',
-  'Gagal memuat log': 'Could not load the activity log.',
-  'Device': 'Device',
-  'Ubah': 'Edit',
-  'Informasi': 'Information',
-  'IP Address boleh sama. Jika IP dan port sama, gunakan Virtual ID berbeda. Edit device untuk mengatur parameter, satuan, jenis/format/panjang register, dan alamat sesuai manual meter. Status Online mengikuti pembacaan berkala oleh modbus_reader.py.': 'Devices can share an IP address. If the IP and port are the same, use a different Virtual ID. Edit a device to configure parameters, units, register type/format/length, and addresses according to the meter manual. Online status follows periodic readings by modbus_reader.py.',
-  'Konfigurasi device disimpan. Pembaca Modbus akan memakainya otomatis.': 'Device configuration saved. The Modbus reader will use it automatically.',
-  'Device {device} dihapus.': 'Device {device} deleted.',
-  'Tarif berhasil disimpan:': 'Tariff saved:',
-  'per kWh': 'per kWh',
-  'Gagal memuat data grafik.': 'Could not load chart data.',
-  'Rentang tanggal/waktu tidak valid. Waktu awal harus sebelum waktu akhir dan waktu akhir tidak boleh di masa depan.': 'The date/time range is invalid. The start must be before the end, and the end cannot be in the future.',
-  'Mode grafik tren': 'Trend chart mode',
-  'Terapkan': 'Apply',
-  'Realtime': 'Real-time',
-  'Riwayat tanggal': 'Date history',
-  'Power meter': 'Power meter',
-  'Semua power meter': 'All power meters',
-  'Dari tanggal/waktu': 'From date/time',
-  'Sampai tanggal/waktu': 'To date/time',
-  'Update otomatis tiap 5 detik': 'Automatically updates every 5 seconds',
-  'Belum ada data energi pada periode ini': 'No energy data is available for this period',
-  'Memuat data grafik...': 'Loading chart data...',
-  'Pastikan power meter aktif dan pengumpul data berjalan.': 'Make sure the power meter is active and the data collector is running.',
-  'Grafik {metric} berdasarkan waktu. Arahkan kursor ke grafik untuk melihat nilai dan waktu.': 'Chart of {metric} over time. Hover over the chart to see values and timestamps.',
-  'titik meter': 'meter points',
-  'Distribusi konsumsi energi tiap power meter': 'Energy consumption distribution per power meter',
-  'Total': 'Total',
-  'Gagal memuat data monitoring': 'Could not load monitoring data.',
-  'Pilih rentang waktu yang valid. Waktu awal harus sebelum waktu akhir dan waktu akhir tidak boleh di masa depan.': 'Select a valid date/time range. The start must be before the end, and the end cannot be in the future.',
-  'Belum ada data': 'No data yet',
-  'Role': 'Role',
-  'Gunakan password yang kuat dan belum pernah dipakai': 'Use a strong password that has not been used before.',
-  'Password berhasil diganti.': 'Password changed successfully.',
-  'Role {user} diubah menjadi {role}.': 'The role for {user} was changed to {role}.',
-  'Pengguna': 'Users',
-  'Akun {user} dibuat dengan role {role}.': 'Account {user} was created with role {role}.',
-  'Buat akun baru sekaligus menentukan role-nya': 'Create a new account and choose its role.',
-  'Password awal': 'Initial password',
-  'Pesan Support': 'Support Messages',
-  'Pesan dari tombol Hubungi Support di halaman login': 'Messages sent using Contact Support on the sign-in page',
-  'Memuat pesan...': 'Loading messages...',
-  'Belum ada pesan masuk.': 'No messages received.',
-  'Daftar akun': 'Register account',
-  'Ubah profil': 'Update profile',
-  'Ganti foto profil': 'Update profile photo',
-  'Hapus foto profil': 'Remove profile photo',
-  'Minta reset password': 'Request password reset',
-  'Reset password': 'Reset password',
-  'Ubah role': 'Change role',
-  'Tambah pengguna': 'Add user',
-  'Status pesan support': 'Support message status',
-  'Tambah device': 'Add device',
-  'Ubah device': 'Edit device',
-  'Hapus device': 'Delete device',
-  'Backup konfigurasi': 'Back up configuration',
-  'Restore konfigurasi': 'Restore configuration',
-  'Device ID 2-50 karakter: huruf, angka, strip, atau garis bawah': 'Device ID must be 2–50 characters: letters, numbers, hyphens, or underscores',
-  'Format IP tidak valid': 'Invalid IP format',
-  'Port 1-65535': 'Port must be between 1 and 65535',
-  'Virtual ID 1-247, atau 255 untuk server TCP langsung (0 dan 248-254 dicadangkan)': 'Virtual ID must be 1–247, or 255 for a direct TCP server (0 and 248–254 are reserved)',
-  'Harus berupa angka lebih dari 0, atau kosongkan': 'Must be a number greater than 0, or leave blank',
-  'Daya': 'Power',
-  'Arus': 'Current',
-  'Tegangan': 'Voltage',
-  'Frekuensi': 'Frequency',
-  'JSON File': 'JSON File',
-  'Data laporan terstruktur untuk integrasi': 'Structured report data for integration',
-  'CSV dan JSON di-stream serta dibatasi maksimal 10.000 baris per laporan.': 'CSV and JSON are streamed and limited to 10,000 rows per report.',
+let serverLoadPromise: Promise<void> | null = null
+
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = current
 }
 
-export function getSystemLanguage(): SystemLanguage {
-  if (typeof window === 'undefined') return 'id'
-  return window.localStorage.getItem(LANGUAGE_KEY) === 'en' ? 'en' : 'id'
-}
-
-export function setSystemLanguage(language: SystemLanguage) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(LANGUAGE_KEY, language)
-    window.localStorage.setItem(LANGUAGE_OVERRIDE_KEY, 'true')
-  }
+function notifyListeners() {
   listeners.forEach((listener) => listener())
 }
 
-export function applySystemLanguageSetting(language: SystemLanguage) {
-  if (typeof window !== 'undefined' && window.localStorage.getItem(LANGUAGE_OVERRIDE_KEY) !== 'true') {
-    window.localStorage.setItem(LANGUAGE_KEY, language)
+// ==========================================
+// SET LANGUAGE
+// ==========================================
+
+export function setLanguage(lang: Lang) {
+  if (lang !== 'id' && lang !== 'en') return
+
+  current = lang
+  languageRevision++
+
+  try {
+    localStorage.setItem(STORAGE_KEY, lang)
+  } catch {
+    // Browser storage unavailable
   }
-  listeners.forEach((listener) => listener())
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = lang
+  }
+
+  notifyListeners()
 }
 
-export function saveSystemLanguage(language: SystemLanguage) {
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(LANGUAGE_KEY, language)
-    window.localStorage.removeItem(LANGUAGE_OVERRIDE_KEY)
-  }
-  listeners.forEach((listener) => listener())
+export function getLanguage(): Lang {
+  return current
 }
+
+// ==========================================
+// BROWSER TAB SYNCHRONIZATION
+// ==========================================
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== STORAGE_KEY) return
+
+    if (event.newValue !== 'id' && event.newValue !== 'en') {
+      return
+    }
+
+    current = event.newValue
+    languageRevision++
+
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = current
+    }
+
+    notifyListeners()
+  })
+}
+
+// ==========================================
+// LOAD LANGUAGE FROM SERVER
+// ==========================================
+
+export async function loadLanguageFromServer(): Promise<void> {
+  if (loadedFromServer) return
+
+  if (serverLoadPromise) {
+    return serverLoadPromise
+  }
+
+  const token = getToken()
+
+  if (!token) return
+
+  const revisionAtStart = languageRevision
+
+  serverLoadPromise = (async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/maintenance/settings`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        },
+      )
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to load language settings: ${response.status}`,
+        )
+      }
+
+      const data = await response.json()
+
+      loadedFromServer = true
+
+      // Jangan menimpa perubahan bahasa terbaru pengguna
+      if (
+        (data.language === 'id' || data.language === 'en') &&
+        languageRevision === revisionAtStart
+      ) {
+        setLanguage(data.language)
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load language settings:',
+        error,
+      )
+    } finally {
+      serverLoadPromise = null
+    }
+  })()
+
+  return serverLoadPromise
+}
+
+// ==========================================
+// TRANSLATION DICTIONARY
+// ==========================================
+
+const dict: Record<Lang, Record<string, string>> = {
+  id: {
+    // --------------------------------------
+    // GENERAL
+    // --------------------------------------
+
+    'app.name': 'SEMFS',
+    'app.loading': 'Memuat aplikasi...',
+    'app.welcome': 'Selamat Datang',
+    'app.back': 'Kembali',
+    'app.next': 'Selanjutnya',
+    'app.cancel': 'Batal',
+    'app.save': 'Simpan',
+    'app.delete': 'Hapus',
+    'app.edit': 'Ubah',
+    'app.search': 'Cari',
+    'app.filter': 'Filter',
+    'app.refresh': 'Muat Ulang',
+    'app.close': 'Tutup',
+    'app.confirm': 'Konfirmasi',
+    'app.submit': 'Kirim',
+    'app.reset': 'Reset',
+    'app.actions': 'Aksi',
+    'app.status': 'Status',
+    'app.date': 'Tanggal',
+    'app.time': 'Waktu',
+    'app.nameLabel': 'Nama',
+    'app.description': 'Deskripsi',
+    'app.noData': 'Tidak ada data.',
+    'app.success': 'Berhasil',
+    'app.failed': 'Gagal',
+    'app.online': 'Online',
+    'app.offline': 'Offline',
+    'app.enabled': 'Aktif',
+    'app.disabled': 'Nonaktif',
+
+    // --------------------------------------
+    // SETTINGS
+    // --------------------------------------
+
+    'settings.title': 'Pengaturan Sistem',
+    'settings.subtitle': 'Atur zona waktu dan bahasa yang dipakai sistem.',
+    'settings.readOnly': 'Hanya admin yang dapat mengubah pengaturan. Kamu hanya bisa melihatnya.',
+    'settings.loading': 'Memuat pengaturan...',
+    'settings.section': 'Wilayah dan bahasa',
+    'settings.timezone': 'Zona waktu',
+    'settings.timezoneHint': 'Dipakai untuk menampilkan waktu data dan laporan.',
+    'settings.language': 'Bahasa',
+    'settings.lastChanged': 'Terakhir diubah',
+    'settings.neverChanged': 'Belum pernah diubah.',
+    'settings.save': 'Simpan perubahan',
+    'settings.saving': 'Menyimpan...',
+    'settings.saved': 'Pengaturan sistem berhasil disimpan.',
+    'settings.indonesian': 'Bahasa Indonesia',
+    'settings.english': 'Bahasa Inggris',
+
+    // --------------------------------------
+    // ERRORS
+    // --------------------------------------
+
+    'err.noSession': 'Sesi login tidak tersedia. Silakan login kembali.',
+    'err.connect': 'Tidak dapat terhubung ke server. Pastikan API sudah berjalan.',
+    'err.request': 'Permintaan gagal (kode {code}).',
+    'err.load': 'Gagal memuat pengaturan sistem.',
+    'err.save': 'Gagal menyimpan pengaturan sistem.',
+    'err.generic': 'Terjadi kesalahan. Silakan coba lagi.',
+    'err.unauthorized': 'Anda tidak memiliki izin untuk mengakses halaman ini.',
+    'err.notFound': 'Data tidak ditemukan.',
+    'err.required': 'Bagian ini wajib diisi.',
+
+    // --------------------------------------
+    // DASHBOARD
+    // --------------------------------------
+
+    'welcomeDashboard': 'Selamat Datang di Dashboard',
+    'dashboardSubtitle': 'Overview sistem monitoring dan forecasting energi Anda',
+    'statOnlineDevices': 'Perangkat Online',
+    'statPowerMeterStatus': 'Status power meter',
+    'statTotalDevices': 'Total Perangkat',
+    'statRegisteredInSystem': 'Terdaftar di sistem',
+    'statSystemHealth': 'Kesehatan Sistem',
+    'statApiDatabase': 'API & database',
+    'statActiveNotifications': 'Notifikasi Aktif',
+    'unreadText': 'Belum dibaca',
+    'alertText': 'Alert',
+    'mainMenu': 'Menu Utama',
+    'checkingSystemStatus': 'Memeriksa status sistem...',
+    'systemOperational': 'Sistem Operasional',
+    'serverDisconnected': 'Server tidak terhubung',
+    'lastChecked': 'Pemeriksaan terakhir',
+    'connected': 'Terhubung',
+    'disconnected': 'Tidak terhubung',
+    'accountLabel': 'Akun',
+    'systemNormal': 'Sistem Normal',
+    'devicesHavingIssues': 'perangkat bermasalah',
+
+    // --------------------------------------
+    // DASHBOARD MENU
+    // --------------------------------------
+
+    'feature_monitoring_title': 'Monitoring Energy',
+    'feature_monitoring_desc': 'Pantau konsumsi energi real-time dengan visualisasi interaktif',
+
+    'feature_forecasting_title': 'Forecasting Energy',
+    'feature_forecasting_desc': 'Prediksi dan analisis tren konsumsi energi menggunakan AI',
+
+    'feature_pengaturan_title': 'Pengaturan Sistem',
+    'feature_pengaturan_desc': 'Konfigurasi sistem',
+
+    'feature_ekspor_title': 'Ekspor & Laporan',
+    'feature_ekspor_desc': 'Buat dan unduh laporan',
+
+    'feature_maintenance_title': 'Maintenance',
+    'feature_maintenance_desc': 'Kelola tarif energi dan perangkat power meter',
+
+    'feature_pengguna_title': 'Kelola Pengguna',
+    'feature_pengguna_desc': 'Atur akun, role, dan pesan support',
+
+    // --------------------------------------
+    // NAVIGATION
+    // --------------------------------------
+
+    'nav.dashboard': 'Dashboard',
+    'nav.monitoring': 'Monitoring Energy',
+    'nav.forecasting': 'Forecasting Energy',
+    'nav.settings': 'Pengaturan Sistem',
+    'nav.export': 'Ekspor & Laporan',
+    'nav.maintenance': 'Maintenance',
+    'nav.users': 'Kelola Pengguna',
+    'nav.logout': 'Keluar',
+    'nav.profile': 'Profil',
+
+    // --------------------------------------
+    // MONITORING
+    // --------------------------------------
+
+    'monitoring.title': 'Monitoring Energi',
+    'monitoring.subtitle': 'Pantau konsumsi energi secara real-time.',
+    'monitoring.power': 'Daya',
+    'monitoring.voltage': 'Tegangan',
+    'monitoring.current': 'Arus',
+    'monitoring.energy': 'Energi',
+    'monitoring.frequency': 'Frekuensi',
+    'monitoring.powerFactor': 'Faktor Daya',
+    'monitoring.totalConsumption': 'Total Konsumsi',
+    'monitoring.deviceStatus': 'Status Perangkat',
+    'monitoring.selectDevice': 'Pilih Perangkat',
+    'monitoring.allDevices': 'Semua Perangkat',
+    'monitoring.liveData': 'Data Real-time',
+    'monitoring.history': 'Riwayat Konsumsi',
+    'monitoring.noData': 'Belum ada data monitoring.',
+
+    // --------------------------------------
+    // FORECASTING
+    // --------------------------------------
+
+    'forecasting.title': 'Peramalan Energi',
+    'forecasting.subtitle': 'Prediksi dan analisis tren konsumsi energi menggunakan AI.',
+    'forecasting.prediction': 'Prediksi Konsumsi',
+    'forecasting.actual': 'Konsumsi Aktual',
+    'forecasting.forecast': 'Hasil Peramalan',
+    'forecasting.period': 'Periode',
+    'forecasting.daily': 'Harian',
+    'forecasting.weekly': 'Mingguan',
+    'forecasting.monthly': 'Bulanan',
+    'forecasting.accuracy': 'Akurasi Model',
+    'forecasting.generate': 'Buat Prediksi',
+    'forecasting.loading': 'Sedang membuat prediksi...',
+    'forecasting.noData': 'Belum ada data peramalan.',
+    'forecasting.analysis': 'Analisis Tren',
+    'forecasting.result': 'Hasil Prediksi',
+
+    // --------------------------------------
+    // MAINTENANCE
+    // --------------------------------------
+
+    'maintenance.title': 'Maintenance',
+    'maintenance.subtitle': 'Kelola tarif energi dan perangkat power meter.',
+    'maintenance.devices': 'Perangkat',
+    'maintenance.tariffs': 'Tarif Energi',
+    'maintenance.addDevice': 'Tambah Perangkat',
+    'maintenance.editDevice': 'Ubah Perangkat',
+    'maintenance.deleteDevice': 'Hapus Perangkat',
+    'maintenance.deviceName': 'Nama Perangkat',
+    'maintenance.deviceId': 'ID Perangkat',
+    'maintenance.deviceOnline': 'Perangkat Online',
+    'maintenance.deviceOffline': 'Perangkat Offline',
+    'maintenance.tariff': 'Tarif Listrik',
+    'maintenance.currency': 'Rupiah',
+    'maintenance.save': 'Simpan Perubahan',
+    'maintenance.noDevices': 'Belum ada perangkat terdaftar.',
+
+    // --------------------------------------
+    // EXPORT & REPORTS
+    // --------------------------------------
+
+    'export.title': 'Ekspor & Laporan',
+    'export.subtitle': 'Buat dan unduh laporan konsumsi energi.',
+    'export.generate': 'Buat Laporan',
+    'export.download': 'Unduh Laporan',
+    'export.format': 'Format File',
+    'export.startDate': 'Tanggal Mulai',
+    'export.endDate': 'Tanggal Akhir',
+    'export.reportType': 'Jenis Laporan',
+    'export.excel': 'Excel',
+    'export.pdf': 'PDF',
+    'export.csv': 'CSV',
+    'export.noData': 'Tidak ada laporan tersedia.',
+    'export.success': 'Laporan berhasil dibuat.',
+
+    // --------------------------------------
+    // USER MANAGEMENT
+    // --------------------------------------
+
+    'users.title': 'Kelola Pengguna',
+    'users.subtitle': 'Atur akun, role, dan pesan support.',
+    'users.name': 'Nama Pengguna',
+    'users.email': 'Email',
+    'users.role': 'Role',
+    'users.admin': 'Administrator',
+    'users.operator': 'Operator',
+    'users.user': 'Pengguna',
+    'users.add': 'Tambah Pengguna',
+    'users.edit': 'Ubah Pengguna',
+    'users.delete': 'Hapus Pengguna',
+    'users.password': 'Kata Sandi',
+    'users.confirmPassword': 'Konfirmasi Kata Sandi',
+    'users.noUsers': 'Belum ada pengguna.',
+    'users.support': 'Pesan Support',
+
+    // --------------------------------------
+    // NOTIFICATIONS
+    // --------------------------------------
+
+    'notifications.title': 'Notifikasi',
+    'notifications.empty': 'Tidak ada notifikasi.',
+    'notifications.unread': 'Belum dibaca',
+    'notifications.read': 'Sudah dibaca',
+    'notifications.markRead': 'Tandai sudah dibaca',
+    'notifications.markAllRead': 'Tandai semua sudah dibaca',
+    'notifications.delete': 'Hapus notifikasi',
+
+    // --------------------------------------
+    // AUTHENTICATION
+    // --------------------------------------
+
+    'auth.login': 'Masuk',
+    'auth.logout': 'Keluar',
+    'auth.email': 'Alamat Email',
+    'auth.password': 'Kata Sandi',
+    'auth.forgotPassword': 'Lupa Kata Sandi?',
+    'auth.rememberMe': 'Ingat Saya',
+    'auth.loginSuccess': 'Berhasil masuk.',
+    'auth.loginFailed': 'Gagal masuk. Periksa email dan kata sandi Anda.',
+  },
+
+  en: {
+    // --------------------------------------
+    // GENERAL
+    // --------------------------------------
+
+    'app.name': 'SEMFS',
+    'app.loading': 'Loading application...',
+    'app.welcome': 'Welcome',
+    'app.back': 'Back',
+    'app.next': 'Next',
+    'app.cancel': 'Cancel',
+    'app.save': 'Save',
+    'app.delete': 'Delete',
+    'app.edit': 'Edit',
+    'app.search': 'Search',
+    'app.filter': 'Filter',
+    'app.refresh': 'Refresh',
+    'app.close': 'Close',
+    'app.confirm': 'Confirm',
+    'app.submit': 'Submit',
+    'app.reset': 'Reset',
+    'app.actions': 'Actions',
+    'app.status': 'Status',
+    'app.date': 'Date',
+    'app.time': 'Time',
+    'app.nameLabel': 'Name',
+    'app.description': 'Description',
+    'app.noData': 'No data available.',
+    'app.success': 'Success',
+    'app.failed': 'Failed',
+    'app.online': 'Online',
+    'app.offline': 'Offline',
+    'app.enabled': 'Enabled',
+    'app.disabled': 'Disabled',
+
+    // --------------------------------------
+    // SETTINGS
+    // --------------------------------------
+
+    'settings.title': 'System Settings',
+    'settings.subtitle': 'Set the time zone and language used by the system.',
+    'settings.readOnly': 'Only admins can change settings. You can view them only.',
+    'settings.loading': 'Loading settings...',
+    'settings.section': 'Region and language',
+    'settings.timezone': 'Time zone',
+    'settings.timezoneHint': 'Used to display data and report times.',
+    'settings.language': 'Language',
+    'settings.lastChanged': 'Last changed',
+    'settings.neverChanged': 'Never changed.',
+    'settings.save': 'Save changes',
+    'settings.saving': 'Saving...',
+    'settings.saved': 'System settings saved successfully.',
+    'settings.indonesian': 'Indonesian',
+    'settings.english': 'English',
+
+    // --------------------------------------
+    // ERRORS
+    // --------------------------------------
+
+    'err.noSession': 'No active session. Please sign in again.',
+    'err.connect': 'Cannot reach the server. Make sure the API is running.',
+    'err.request': 'Request failed (code {code}).',
+    'err.load': 'Failed to load system settings.',
+    'err.save': 'Failed to save system settings.',
+    'err.generic': 'An error occurred. Please try again.',
+    'err.unauthorized': 'You do not have permission to access this page.',
+    'err.notFound': 'Data not found.',
+    'err.required': 'This field is required.',
+
+    // --------------------------------------
+    // DASHBOARD
+    // --------------------------------------
+
+    'welcomeDashboard': 'Welcome to the Dashboard',
+    'dashboardSubtitle': 'Overview of your energy monitoring and forecasting system',
+    'statOnlineDevices': 'Online Devices',
+    'statPowerMeterStatus': 'Power meter status',
+    'statTotalDevices': 'Total Devices',
+    'statRegisteredInSystem': 'Registered in system',
+    'statSystemHealth': 'System Health',
+    'statApiDatabase': 'API & database',
+    'statActiveNotifications': 'Active Notifications',
+    'unreadText': 'Unread',
+    'alertText': 'Alerts',
+    'mainMenu': 'Main Menu',
+    'checkingSystemStatus': 'Checking system status...',
+    'systemOperational': 'System Operational',
+    'serverDisconnected': 'Server disconnected',
+    'lastChecked': 'Last checked',
+    'connected': 'Connected',
+    'disconnected': 'Disconnected',
+    'accountLabel': 'Account',
+    'systemNormal': 'System Normal',
+    'devicesHavingIssues': 'devices having issues',
+
+    // --------------------------------------
+    // DASHBOARD MENU
+    // --------------------------------------
+
+    'feature_monitoring_title': 'Energy Monitoring',
+    'feature_monitoring_desc': 'Monitor real-time energy consumption with interactive visualizations',
+
+    'feature_forecasting_title': 'Energy Forecasting',
+    'feature_forecasting_desc': 'Predict and analyze energy consumption trends using AI',
+
+    'feature_pengaturan_title': 'System Settings',
+    'feature_pengaturan_desc': 'System configuration',
+
+    'feature_ekspor_title': 'Exports & Reports',
+    'feature_ekspor_desc': 'Generate and download reports',
+
+    'feature_maintenance_title': 'Maintenance',
+    'feature_maintenance_desc': 'Manage energy tariffs and power meter devices',
+
+    'feature_pengguna_title': 'User Management',
+    'feature_pengguna_desc': 'Manage accounts, roles, and support messages',
+
+    // --------------------------------------
+    // NAVIGATION
+    // --------------------------------------
+
+    'nav.dashboard': 'Dashboard',
+    'nav.monitoring': 'Energy Monitoring',
+    'nav.forecasting': 'Energy Forecasting',
+    'nav.settings': 'System Settings',
+    'nav.export': 'Exports & Reports',
+    'nav.maintenance': 'Maintenance',
+    'nav.users': 'User Management',
+    'nav.logout': 'Logout',
+    'nav.profile': 'Profile',
+
+    // --------------------------------------
+    // MONITORING
+    // --------------------------------------
+
+    'monitoring.title': 'Energy Monitoring',
+    'monitoring.subtitle': 'Monitor energy consumption in real time.',
+    'monitoring.power': 'Power',
+    'monitoring.voltage': 'Voltage',
+    'monitoring.current': 'Current',
+    'monitoring.energy': 'Energy',
+    'monitoring.frequency': 'Frequency',
+    'monitoring.powerFactor': 'Power Factor',
+    'monitoring.totalConsumption': 'Total Consumption',
+    'monitoring.deviceStatus': 'Device Status',
+    'monitoring.selectDevice': 'Select Device',
+    'monitoring.allDevices': 'All Devices',
+    'monitoring.liveData': 'Real-time Data',
+    'monitoring.history': 'Consumption History',
+    'monitoring.noData': 'No monitoring data available.',
+
+    // --------------------------------------
+    // FORECASTING
+    // --------------------------------------
+
+    'forecasting.title': 'Energy Forecasting',
+    'forecasting.subtitle': 'Predict and analyze energy consumption trends using AI.',
+    'forecasting.prediction': 'Consumption Prediction',
+    'forecasting.actual': 'Actual Consumption',
+    'forecasting.forecast': 'Forecast Results',
+    'forecasting.period': 'Period',
+    'forecasting.daily': 'Daily',
+    'forecasting.weekly': 'Weekly',
+    'forecasting.monthly': 'Monthly',
+    'forecasting.accuracy': 'Model Accuracy',
+    'forecasting.generate': 'Generate Forecast',
+    'forecasting.loading': 'Generating forecast...',
+    'forecasting.noData': 'No forecasting data available.',
+    'forecasting.analysis': 'Trend Analysis',
+    'forecasting.result': 'Prediction Results',
+
+    // --------------------------------------
+    // MAINTENANCE
+    // --------------------------------------
+
+    'maintenance.title': 'Maintenance',
+    'maintenance.subtitle': 'Manage energy tariffs and power meter devices.',
+    'maintenance.devices': 'Devices',
+    'maintenance.tariffs': 'Energy Tariffs',
+    'maintenance.addDevice': 'Add Device',
+    'maintenance.editDevice': 'Edit Device',
+    'maintenance.deleteDevice': 'Delete Device',
+    'maintenance.deviceName': 'Device Name',
+    'maintenance.deviceId': 'Device ID',
+    'maintenance.deviceOnline': 'Device Online',
+    'maintenance.deviceOffline': 'Device Offline',
+    'maintenance.tariff': 'Electricity Tariff',
+    'maintenance.currency': 'Indonesian Rupiah',
+    'maintenance.save': 'Save Changes',
+    'maintenance.noDevices': 'No registered devices.',
+
+    // --------------------------------------
+    // EXPORT & REPORTS
+    // --------------------------------------
+
+    'export.title': 'Exports & Reports',
+    'export.subtitle': 'Generate and download energy consumption reports.',
+    'export.generate': 'Generate Report',
+    'export.download': 'Download Report',
+    'export.format': 'File Format',
+    'export.startDate': 'Start Date',
+    'export.endDate': 'End Date',
+    'export.reportType': 'Report Type',
+    'export.excel': 'Excel',
+    'export.pdf': 'PDF',
+    'export.csv': 'CSV',
+    'export.noData': 'No reports available.',
+    'export.success': 'Report generated successfully.',
+
+    // --------------------------------------
+    // USER MANAGEMENT
+    // --------------------------------------
+
+    'users.title': 'User Management',
+    'users.subtitle': 'Manage accounts, roles, and support messages.',
+    'users.name': 'User Name',
+    'users.email': 'Email',
+    'users.role': 'Role',
+    'users.admin': 'Administrator',
+    'users.operator': 'Operator',
+    'users.user': 'User',
+    'users.add': 'Add User',
+    'users.edit': 'Edit User',
+    'users.delete': 'Delete User',
+    'users.password': 'Password',
+    'users.confirmPassword': 'Confirm Password',
+    'users.noUsers': 'No users available.',
+    'users.support': 'Support Messages',
+
+    // --------------------------------------
+    // NOTIFICATIONS
+    // --------------------------------------
+
+    'notifications.title': 'Notifications',
+    'notifications.empty': 'No notifications.',
+    'notifications.unread': 'Unread',
+    'notifications.read': 'Read',
+    'notifications.markRead': 'Mark as read',
+    'notifications.markAllRead': 'Mark all as read',
+    'notifications.delete': 'Delete notification',
+
+    // --------------------------------------
+    // AUTHENTICATION
+    // --------------------------------------
+
+    'auth.login': 'Login',
+    'auth.logout': 'Logout',
+    'auth.email': 'Email Address',
+    'auth.password': 'Password',
+    'auth.forgotPassword': 'Forgot Password?',
+    'auth.rememberMe': 'Remember Me',
+    'auth.loginSuccess': 'Successfully logged in.',
+    'auth.loginFailed': 'Login failed. Please check your email and password.',
+  },
+}
+
+// ==========================================
+// TRANSLATION FUNCTION
+// ==========================================
+
+export function tr(
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  let result =
+    dict[current][key] ??
+    dict.id[key] ??
+    key
+
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) {
+      result = result.split(`{${name}}`).join(String(value))
+    }
+  }
+
+  return result
+}
+
+// ==========================================
+// REACT SUBSCRIPTION
+// ==========================================
 
 function subscribe(listener: () => void) {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
-export function useTranslation() {
-  const language = useSyncExternalStore<SystemLanguage>(subscribe, getSystemLanguage, () => 'id')
-  const t = useCallback((text: string) => language === 'en' ? english[text] ?? text : text, [language])
-  return { language, t }
+// ==========================================
+// GLOBAL I18N HOOK
+// ==========================================
+
+export function useI18n() {
+  const lang = useSyncExternalStore(
+    subscribe,
+    () => current,
+    () => current,
+  )
+
+  useEffect(() => {
+    void loadLanguageFromServer()
+  }, [])
+
+  const t = (
+    key: string,
+    vars?: Record<string, string | number>,
+  ): string => {
+    let result =
+      dict[lang][key] ??
+      dict.id[key] ??
+      key
+
+    if (vars) {
+      for (const [name, value] of Object.entries(vars)) {
+        result = result.split(`{${name}}`).join(String(value))
+      }
+    }
+
+    return result
+  }
+
+  return {
+    lang,
+    t,
+    setLanguage,
+  }
+}
+
+
+// ==========================================
+// BACKWARD COMPATIBILITY
+// ==========================================
+
+export function useTranslation(_namespace?: string) {
+  const { lang, t, setLanguage } = useI18n()
+
+  return {
+    lang,
+    t,
+    setLanguage,
+
+    // Compatibility with react-i18next style
+    i18n: {
+      language: lang,
+
+      changeLanguage: (newLang: Lang) => {
+        setLanguage(newLang)
+        return Promise.resolve()
+      },
+    },
+  }
 }

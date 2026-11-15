@@ -6,7 +6,7 @@ import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Field, Input } from '../components/ui/input'
 import { ApiError } from '../lib/api'
-import { useTranslation } from '../lib/i18n'
+import { useI18n } from '../lib/i18n'
 
 const HIGHLIGHTS = [
   { icon: Activity, title: 'Real-time Monitoring', text: 'Pantau penggunaan energi listrik secara langsung' },
@@ -22,7 +22,7 @@ const STATS = [
 
 export default function LoginPage() {
   const { status, login } = useAuth()
-  const { t } = useTranslation()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const state = location.state as { from?: string; notice?: string } | null
