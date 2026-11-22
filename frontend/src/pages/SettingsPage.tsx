@@ -1,415 +1,176 @@
-﻿
-import { Globe, Save, Settings2 } from 'lucide-react'
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type FormEvent,
-} from 'react'
-
+import { Clock3, Globe2, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useUser } from '../auth/auth-context'
 import { getToken } from '../auth/tokenStorage'
+import { PageHeader } from '../components/layout/PageHeader'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
-import { setLanguage, tr, useI18n } from '../lib/i18n'
+import { useTranslation } from '../lib/i18n'
+import { api, type SystemSettings } from '../lib/api'
+import { applySystemLanguage, currentSystemLanguage, saveSystemLanguageSetting } from '../lib/systemSettings'
+import { setSystemTimezone } from '../lib/utils'
 
-const API_BASE: string =
-  import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+const TIMEZONES: SystemSettings['timezone'][] = ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura', 'UTC']
 
-const TIMEZONES = [
-  { value: 'Asia/Jakarta', label: 'WIB (Asia/Jakarta)' },
-  { value: 'Asia/Makassar', label: 'WITA (Asia/Makassar)' },
-  { value: 'Asia/Jayapura', label: 'WIT (Asia/Jayapura)' },
-  { value: 'UTC', label: 'UTC' },
-]
-
-const LANGUAGES = [
-  { value: 'id', label: 'Bahasa Indonesia' },
-  { value: 'en', label: 'English' },
-] as const
-
-type Lang = 'id' | 'en'
-
-type SystemSettings = {
-  timezone: string
-  language: Lang
-  updated_at: string
-}
-
-type UserInfo = {
-  role?: string
-}
-
-async function request<T>(
-  path: string,
-  token: string,
-  init?: RequestInit,
-): Promise<T> {
-  let response: Response
-
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...init?.headers,
-      },
-    })
-  } catch {
-    throw new Error(tr('err.connect'))
-  }
-
-  if (!response.ok) {
-    let detail = tr('err.request', {
-      code: response.status,
-    })
-
-    try {
-      const data = await response.json()
-
-      if (typeof data?.detail === 'string') {
-        detail = data.detail
-      }
-    } catch {
-      // Gunakan pesan error default.
-    }
-
-    throw new Error(detail)
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-
-  return (await response.json()) as T
+function validPollingInterval(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 3600
 }
 
 export default function SettingsPage() {
-  const { t, lang } = useI18n()
-
-  const [timezone, setTimezone] = useState('Asia/Jakarta')
-  const [language, setLanguageValue] = useState<Lang>('id')
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
-
-  const [canEdit, setCanEdit] = useState(false)
+  const { t } = useTranslation()
+  const user = useUser()
+  const canManage = user.role === 'admin'
+  const [settings, setSettings] = useState<Pick<SystemSettings, 'timezone' | 'language' | 'poll_interval_seconds'> | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
+  const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-
-  // Simpan bahasa terakhir yang berhasil dimuat/disimpan.
-  const [savedLanguage, setSavedLanguage] = useState<Lang>('id')
-
-  // ==========================================
-  // LOAD SETTINGS
-  // ==========================================
-
-  const load = useCallback(async () => {
-    const token = getToken()
-
-    if (!token) {
-      t('err.noSession')
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const [settings, me] = await Promise.all([
-        request<SystemSettings>(
-          '/maintenance/settings',
-          token,
-        ),
-        request<UserInfo>('/auth/me', token),
-      ])
-
-      const validLanguage: Lang =
-        settings.language === 'en' ? 'en' : 'id'
-
-      setTimezone(settings.timezone || 'Asia/Jakarta')
-      setLanguageValue(validLanguage)
-      setSavedLanguage(validLanguage)
-      setUpdatedAt(settings.updated_at ?? null)
-      setCanEdit(me.role === 'admin')
-
-      // Terapkan bahasa dari server.
-      setLanguage(validLanguage)
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t('err.load'),
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    const timer = window.setTimeout(() => {
+      const token = getToken()
+      if (!token) {
+        setError('Sesi login tidak tersedia. Silakan login kembali.')
+        setLoading(false)
+        return
+      }
+      void api.systemSettings(token).then((value) => {
+        if (!validPollingInterval(value.poll_interval_seconds)) {
+          throw new Error('Backend API belum mendukung interval polling. Restart API dari folder backend.')
+        }
+        applySystemLanguage(value.language)
+        setSettings({
+          timezone: value.timezone,
+          language: currentSystemLanguage(),
+          poll_interval_seconds: value.poll_interval_seconds,
+        })
+        setSystemTimezone(value.timezone)
+        setError(null)
+      }).catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Gagal memuat pengaturan.')
+      }).finally(() => setLoading(false))
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
-  // ==========================================
-  // LANGUAGE CHANGE
-  // ==========================================
-
-  function handleLanguageChange(value: string) {
-    if (value !== 'id' && value !== 'en') return
-
-    const nextLanguage = value as Lang
-
-    setLanguageValue(nextLanguage)
-
-    // Terapkan bahasa langsung tanpa menunggu Save.
-    setLanguage(nextLanguage)
-
-    setNotice(null)
-    setError(null)
-  }
-
-  // ==========================================
-  // SAVE SETTINGS
-  // ==========================================
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    if (!canEdit || saving) return
-
+  async function save() {
     const token = getToken()
-
-    if (!token) {
-      t('err.noSession')
+    if (!token || !settings) return
+    if (!validPollingInterval(settings.poll_interval_seconds)) {
+      setError(t('Interval polling harus berupa bilangan bulat antara 1 dan 3600 detik.'))
       return
     }
-
     setSaving(true)
+    setMessage(null)
     setError(null)
-    setNotice(null)
-
     try {
-      const result = await request<SystemSettings>(
-        '/maintenance/settings',
-        token,
-        {
-          method: 'PUT',
-          body: JSON.stringify({
-            timezone,
-            language,
-          }),
-        },
-      )
-
-      const validLanguage: Lang =
-        result.language === 'en' ? 'en' : 'id'
-
-      setTimezone(result.timezone)
-      setLanguageValue(validLanguage)
-      setSavedLanguage(validLanguage)
-      setUpdatedAt(result.updated_at ?? null)
-
-      setLanguage(validLanguage)
-
-      setNotice(tr('settings.saved'))
+      const updated = await api.updateSystemSettings(token, settings)
+      if (!validPollingInterval(updated.poll_interval_seconds)) {
+        throw new Error('Backend API belum mendukung interval polling. Restart API dari folder backend.')
+      }
+      setSettings({
+        timezone: updated.timezone,
+        language: updated.language,
+        poll_interval_seconds: updated.poll_interval_seconds,
+      })
+      setSystemTimezone(updated.timezone)
+      saveSystemLanguageSetting(updated.language)
+      setMessage('Pengaturan berhasil disimpan.')
     } catch (err) {
-      // Jika API gagal, kembalikan bahasa ke
-      // pengaturan terakhir yang berhasil disimpan.
-      setLanguageValue(savedLanguage)
-      setLanguage(savedLanguage)
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : t('err.save'),
-      )
+      setError(err instanceof Error ? err.message : 'Gagal menyimpan pengaturan.')
     } finally {
       setSaving(false)
     }
   }
 
-  // ==========================================
-  // STYLES
-  // ==========================================
-
-  const selectClass =
-    'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 ' +
-    'focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20 ' +
-    'disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500'
-
-  // ==========================================
-  // RENDER
-  // ==========================================
+  const localTime = new Intl.DateTimeFormat(settings?.language === 'en' ? 'en-US' : 'id-ID', {
+    dateStyle: 'full',
+    timeStyle: 'medium',
+    timeZone: settings?.timezone ?? 'Asia/Jakarta',
+  }).format(new Date())
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
+    <div className="min-h-screen bg-slate-50">
+      <PageHeader iconClassName="bg-purple-600" icon={Settings} title={t('Pengaturan Sistem')} subtitle={t('Konfigurasi zona waktu, bahasa, dan interval polling')} />
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_290px]">
+          <section className="space-y-4">
+            {error && <Alert variant="error">{t(error)}</Alert>}
+            {message && <Alert variant="success">{t(message)}</Alert>}
+            {loading ? <Card className="p-8 text-center text-sm text-slate-500">{t('Memuat pengaturan...')}</Card> : settings && (
+              <>
+                <Card className="p-4 sm:p-5">
+                  <label htmlFor="settings-timezone" className="flex items-center gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600"><Clock3 className="size-5" aria-hidden /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{t('Zona Waktu')}</span>
+                      <span className="block text-xs text-slate-500">{settings.timezone} · {settings.timezone === 'UTC' ? t('Universal Time Coordinated') : t(`Waktu Indonesia ${settings.timezone === 'Asia/Jakarta' ? 'Barat (GMT+7)' : settings.timezone === 'Asia/Makassar' ? 'Tengah (GMT+8)' : 'Timur (GMT+9)'}`)}</span>
+                    </span>
+                    <select id="settings-timezone" value={settings.timezone} disabled={!canManage} onChange={(event) => setSettings({ ...settings, timezone: event.target.value as SystemSettings['timezone'] })} className="max-w-40 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 disabled:bg-slate-100">
+                      {TIMEZONES.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
+                    </select>
+                  </label>
+                </Card>
+                <Card className="p-4 sm:p-5">
+                  <label htmlFor="settings-language" className="flex items-center gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Globe2 className="size-5" aria-hidden /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{t('Bahasa')}</span>
+                      <span className="block text-xs text-slate-500">{settings.language === 'id' ? 'ID Bahasa Indonesia' : 'EN English'}</span>
+                    </span>
+                    <select id="settings-language" value={settings.language} disabled={!canManage} onChange={(event) => {
+                      const language = event.target.value as SystemSettings['language']
+                      setSettings((current) => current ? { ...current, language } : current)
+                      applySystemLanguage(language)
+                    }} className="max-w-40 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-700 disabled:bg-slate-100">
+                      <option value="id">{t('Bahasa Indonesia')}</option>
+                      <option value="en">English</option>
+                    </select>
+                  </label>
+                </Card>
+                <Card className="p-4 sm:p-5">
+                  <label htmlFor="settings-poll-interval" className="flex flex-wrap items-center gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><Clock3 className="size-5" aria-hidden /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{t('Interval Polling')}</span>
+                      <span className="block text-xs text-slate-500">{t('Jeda pembacaan semua power meter. Perubahan berlaku otomatis setelah konfigurasi reader diperbarui.')}</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <input id="settings-poll-interval" type="number" min={1} max={3600} step={1} required disabled={!canManage} value={settings.poll_interval_seconds} onChange={(event) => {
+                        const value = Number(event.target.value)
+                        setSettings((current) => current ? { ...current, poll_interval_seconds: value } : current)
+                      }} className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:bg-slate-100" />
+                      <span className="text-sm text-slate-500">{t('detik')}</span>
+                    </span>
+                  </label>
+                </Card>
+                {canManage ? <div className="flex justify-end"><Button onClick={() => void save()} loading={saving}>{t('Simpan Pengaturan')}</Button></div> : <Alert variant="info">{t('Hanya Admin yang dapat mengubah pengaturan sistem.')}</Alert>}
+              </>
+            )}
+          </section>
 
-      {/* HEADER */}
-
-      <div className="flex items-center gap-3">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-          <Settings2 className="size-5" aria-hidden />
-        </span>
-
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            {t('settings.title')}
-          </h1>
-
-          <p className="text-sm text-slate-600">
-            {t('settings.subtitle')}
-          </p>
+          <aside>
+            <Card className="p-4">
+              <h2 className="text-sm font-medium text-slate-700">{t('Preview')}</h2>
+              {settings ? (
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 text-purple-800">
+                    <p className="flex items-center gap-2 text-xs font-medium"><Clock3 className="size-4" aria-hidden />{t('Waktu Saat Ini')}</p>
+                    <p className="mt-3 text-sm">{localTime}</p>
+                    <p className="mt-1 text-xs">{settings.timezone}</p>
+                  </div>
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-800">
+                    <p className="flex items-center gap-2 text-xs font-medium"><Globe2 className="size-4" aria-hidden />{t('Bahasa Aktif')}</p>
+                    <p className="mt-3 text-sm">{settings.language === 'id' ? t('Bahasa Indonesia') : 'English'}</p>
+                    <p className="mt-1 text-xs">{settings.language}</p>
+                  </div>
+                </div>
+              ) : <p className="mt-3 text-sm text-slate-500">{t('Pratinjau tersedia setelah pengaturan dimuat.')}</p>}
+            </Card>
+          </aside>
         </div>
-      </div>
-
-      {/* ALERT */}
-
-      {error && (
-        <Alert variant="error">
-          {error}
-        </Alert>
-      )}
-
-      {notice && (
-        <Alert variant="success">
-          {notice}
-        </Alert>
-      )}
-
-      {!loading && !canEdit && !error && (
-        <Alert variant="error">
-          {t('settings.readOnly')}
-        </Alert>
-      )}
-
-      {/* SETTINGS CARD */}
-
-      <Card className="p-5 sm:p-6">
-
-        {loading ? (
-          <div className="py-4 text-sm text-slate-600">
-            {t('settings.loading')}
-          </div>
-        ) : (
-          <form
-            onSubmit={save}
-            className="space-y-5"
-          >
-
-            {/* SECTION HEADER */}
-
-            <div className="flex items-center gap-2 text-slate-900">
-              <Globe className="size-4" aria-hidden />
-
-              <h2 className="font-semibold">
-                {t('settings.section')}
-              </h2>
-            </div>
-
-            {/* TIMEZONE */}
-
-            <div className="space-y-1.5">
-              <label
-                htmlFor="timezone"
-                className="text-sm font-medium text-slate-800"
-              >
-                {t('settings.timezone')}
-              </label>
-
-              <select
-                id="timezone"
-                name="timezone"
-                className={selectClass}
-                value={timezone}
-                onChange={(event) =>
-                  setTimezone(event.target.value)
-                }
-                disabled={!canEdit || saving}
-              >
-                {TIMEZONES.map((item) => (
-                  <option
-                    key={item.value}
-                    value={item.value}
-                  >
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-
-              <p className="text-xs text-slate-500">
-                {t('settings.timezoneHint')}
-              </p>
-            </div>
-
-            {/* LANGUAGE */}
-
-            <div className="space-y-1.5">
-              <label
-                htmlFor="language"
-                className="text-sm font-medium text-slate-800"
-              >
-                {t('settings.language')}
-              </label>
-
-              <select
-                id="language"
-                name="language"
-                className={selectClass}
-                value={language}
-                onChange={(event) =>
-                  handleLanguageChange(event.target.value)
-                }
-                disabled={!canEdit || saving}
-              >
-                {LANGUAGES.map((item) => (
-                  <option
-                    key={item.value}
-                    value={item.value}
-                  >
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* FOOTER */}
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
-
-              <p className="text-xs text-slate-500">
-                {updatedAt
-                  ? `${t('settings.lastChanged')}: ${new Date(
-                      updatedAt,
-                    ).toLocaleString(
-                      lang === 'en' ? 'en-US' : 'id-ID',
-                    )}`
-                  : t('settings.neverChanged')}
-              </p>
-
-              {canEdit && (
-                <Button
-                  type="submit"
-                  disabled={saving}
-                >
-                  <Save
-                    className="size-4"
-                    aria-hidden
-                  />
-
-                  {saving
-                    ? t('settings.saving')
-                    : t('settings.save')}
-                </Button>
-              )}
-            </div>
-
-          </form>
-        )}
-
-      </Card>
+      </main>
     </div>
   )
 }

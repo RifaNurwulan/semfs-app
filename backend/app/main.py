@@ -1,4 +1,4 @@
-"""..
+﻿"""..
 main.py
 -------
 Titik masuk aplikasi FastAPI.
@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
 from .database import get_db
-from .routes import auth, devices, maintenance, monitoring, notifications, support, users
+from .routes import auth, devices, maintenance, monitoring, notifications, settings, support, users
 
 app = FastAPI(title="SEMF API", version="0.1.0")
 
@@ -33,6 +33,7 @@ app.include_router(notifications.router)
 app.include_router(support.router)
 app.include_router(devices.router)
 app.include_router(monitoring.router)
+app.include_router(settings.router)
 app.include_router(maintenance.router)
 
 
@@ -44,3 +45,4 @@ def health(conn=Depends(get_db)):
         return {"status": "ok", "database": "connected"}
     except Exception:
         raise HTTPException(status_code=503, detail="Database tidak bisa diakses")
+
