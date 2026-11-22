@@ -6,9 +6,8 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
-import { useTranslation } from '../lib/i18n'
 import { api, type SystemSettings } from '../lib/api'
-import { applySystemLanguage, currentSystemLanguage, saveSystemLanguageSetting } from '../lib/systemSettings'
+import { applySystemLanguage, currentSystemLanguage, saveSystemLanguageSetting, useSettingsI18n } from '../lib/systemSettings'
 import { setSystemTimezone } from '../lib/utils'
 
 const TIMEZONES: SystemSettings['timezone'][] = ['Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura', 'UTC']
@@ -18,7 +17,7 @@ function validPollingInterval(value: number | undefined): value is number {
 }
 
 export default function SettingsPage() {
-  const { t } = useTranslation()
+  const { t } = useSettingsI18n()
   const user = useUser()
   const canManage = user.role === 'admin'
   const [settings, setSettings] = useState<Pick<SystemSettings, 'timezone' | 'language' | 'poll_interval_seconds'> | null>(null)
@@ -26,6 +25,12 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -88,7 +93,7 @@ export default function SettingsPage() {
     dateStyle: 'full',
     timeStyle: 'medium',
     timeZone: settings?.timezone ?? 'Asia/Jakarta',
-  }).format(new Date())
+  }).format(now)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -117,7 +122,7 @@ export default function SettingsPage() {
                     <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Globe2 className="size-5" aria-hidden /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold text-slate-900">{t('Bahasa')}</span>
-                      <span className="block text-xs text-slate-500">{settings.language === 'id' ? 'ID Bahasa Indonesia' : 'EN English'}</span>
+                      <span className="block text-xs text-slate-500">{settings.language === 'id' ? 'ID · Bahasa Indonesia' : 'EN · English'}</span>
                     </span>
                     <select id="settings-language" value={settings.language} disabled={!canManage} onChange={(event) => {
                       const language = event.target.value as SystemSettings['language']
